@@ -1,0 +1,318 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usetheme{Madrid}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+
+\definecolor{kulblue}{RGB}{29,56,93}
+\usecolortheme[named=kulblue]{structure}
+\setbeamertemplate{navigation symbols}{}
+
+\title[Graph Methods for Portfolio Optimization]{%
+    Numerical Linear Algebra and Graph Methods\\[0.3em]for Portfolio Optimization}
+\author{Viktor [Surname]}
+\institute[KU Leuven]{%
+    KU Leuven\\[0.4em]
+    \small Supervisors: Prof.\ Vannieuwenhoven \& Prof.\ Noferini}
+\date{\today}
+
+% ---------------------------------------------------------------
+\begin{document}
+
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Outline}
+    \begin{enumerate}
+        \item Portfolio Optimization
+        \item Covariance Matrix
+        \item Uncorrelated Assets and the Adjacency Matrix
+        \item Graphs, Degree, and Centrality
+        \item Centrality Calculation
+        \item Bringing It Together
+        \item Literature: Graph Centralities in Portfolio Management
+        \item What Was Done
+        \item What Will Be Done
+    \end{enumerate}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Portfolio Optimization}
+    \textbf{Goal:} allocate capital across $n$ assets to maximise return and minimise risk.
+
+    \bigskip
+    Given portfolio weights $\mathbf{w} \in \mathbb{R}^n$ with $\mathbf{w}^\top \mathbf{1} = 1$:
+    \begin{itemize}
+        \item \textbf{Expected return:} $\mu_p = \mathbf{w}^\top \boldsymbol{\mu}$
+        \item \textbf{Portfolio variance (risk):} $\sigma_p^2 = \mathbf{w}^\top \Sigma\, \mathbf{w}$
+    \end{itemize}
+
+    \bigskip
+    \textbf{Markowitz mean-variance framework} (1952):
+    \[
+        \min_{\mathbf{w}}\; \mathbf{w}^\top \Sigma\, \mathbf{w}
+        \quad \text{s.t.} \quad
+        \mathbf{w}^\top \boldsymbol{\mu} = \mu^*,\quad
+        \mathbf{w}^\top \mathbf{1} = 1
+    \]
+
+    \bigskip
+    Risk depends on how assets \emph{co-move}, not just their individual variances
+    $\Rightarrow$ the covariance matrix $\Sigma$ is central.
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Covariance Matrix}
+    The \textbf{covariance matrix} $\Sigma \in \mathbb{R}^{n \times n}$ captures pairwise dependencies:
+    \[
+        \Sigma_{ij} = \mathrm{Cov}(r_i, r_j)
+        = \mathbb{E}\bigl[(r_i - \mu_i)(r_j - \mu_j)\bigr]
+    \]
+
+    \bigskip
+    The \textbf{correlation matrix} $C$ normalises this:
+    \[
+        C_{ij} = \frac{\Sigma_{ij}}{\sigma_i \sigma_j} \in [-1, 1],
+        \qquad \Sigma = D C D,\quad D = \mathrm{diag}(\sigma_1, \ldots, \sigma_n)
+    \]
+
+    \bigskip
+    Portfolio variance expands as:
+    \[
+        \sigma_p^2 = \sum_{i}\sum_{j} w_i w_j\, \sigma_i \sigma_j\, C_{ij}
+    \]
+
+    \medskip
+    \begin{block}{Key observation}
+        Risk \emph{decreases} as correlations $C_{ij}$ decrease.
+        Pairs of assets with $C_{ij} < 0$ actively cancel each other's risk.
+    \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Uncorrelated Assets and the Adjacency Matrix}
+    \textbf{For risk minimisation, we prefer assets that are uncorrelated or negatively correlated.}
+
+    \bigskip
+    Two extreme cases for a two-asset portfolio:
+    \begin{itemize}
+        \item $C_{12} = +1$: assets move identically — no diversification
+        \item $C_{12} = -1$: perfect hedge — variance can be eliminated entirely
+    \end{itemize}
+
+    \bigskip
+    \textbf{Removing negative correlations:} set $C_{ij} \leftarrow \max(C_{ij}, 0)$.
+    The resulting matrix is:
+    \begin{itemize}
+        \item Non-negative
+        \item Symmetric
+        \item Zero on the diagonal
+    \end{itemize}
+
+    \medskip
+    \begin{block}{Key observation}
+        This is exactly the structure of a \textbf{weighted adjacency matrix} of a graph,
+        where each bond is a node and each positive correlation is an edge.
+    \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Graphs and Degree}
+    A \textbf{weighted graph} $G = (V, E, w)$:
+    \begin{itemize}
+        \item \textbf{Vertices} $V$: the $n$ bond indices
+        \item \textbf{Edges} $E$: pairs of bonds with positive correlation
+        \item \textbf{Weight} $w_{ij} = C_{ij} \in (0, 1]$: strength of the correlation
+    \end{itemize}
+
+    \bigskip
+    The adjacency matrix $A \in \mathbb{R}^{n \times n}$ encodes this directly: $A_{ij} = w_{ij}$.
+
+    \bigskip
+    \textbf{Weighted degree} of node $i$:
+    \[
+        d_i = \sum_{j=1}^{n} A_{ij}
+    \]
+    A high degree means bond $i$ is highly correlated with many other bonds
+    $\Rightarrow$ less useful for diversification.
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Paths and Centrality}
+    \textbf{Walk of length $k$:} a sequence of $k$ edges connecting nodes.
+
+    \medskip
+    The $(i,j)$ entry of $A^k$ counts the \emph{total weight} of all walks of length $k$ from $i$ to $j$.
+
+    \bigskip
+    \textbf{Centrality} measures the overall importance of a node, accounting for
+    \emph{all} walks of all lengths, not just direct edges:
+
+    \[
+        c_i = \sum_{k=0}^{\infty} f(k)\, \bigl(A^k \mathbf{1}\bigr)_i
+        \;=\; \left[\sum_{k=0}^{\infty} f(k)\, A^k\right]_{\!i,\cdot} \mathbf{1}
+    \]
+
+    where $f(k) > 0$ is a \textbf{decreasing penalty} on walk length.
+
+    \bigskip
+    \begin{block}{Intuition}
+        A central node participates in many walks of all lengths throughout the graph
+        — it is deeply embedded in the correlation structure.
+    \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Centrality Calculation}
+    Two natural choices for the penalty $f(k)$:
+
+    \bigskip
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \textbf{Katz centrality}\\[0.4em]
+            $f(k) = \alpha^k$, \quad $\alpha < 1/\rho(A)$
+            \[
+                \sum_{k=0}^{\infty} \alpha^k A^k = (I - \alpha A)^{-1}
+            \]
+            \[
+                \mathbf{c} = (I - \alpha A)^{-1}\,\mathbf{1}
+            \]
+            Solved via a linear system. $\alpha$ controls how much indirect walks contribute.
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{Exponential centrality}\\[0.4em]
+            $f(k) = 1/k!$
+            \[
+                \sum_{k=0}^{\infty} \frac{A^k}{k!} = e^A
+            \]
+            \[
+                \mathbf{c} = e^A\,\mathbf{1}
+            \]
+            Always converges. Stronger emphasis on short walks due to faster decay.
+        \end{column}
+    \end{columns}
+
+    \bigskip
+    Both are efficiently computable via linear algebra: \texttt{solve} for Katz,
+    Krylov subspace methods (\texttt{expm\_multiply}) for exponential.
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Bringing It Together}
+    \begin{enumerate}
+        \item Compute daily returns for all bond indices
+        \item Build \textbf{rolling correlation matrices} (125-day window, yearly reset)
+        \item Average within each year $\Rightarrow$ yearly adjacency matrix $A_t$
+        \item Apply \textbf{ReLU threshold}: $A_{ij} \leftarrow \max(A_{ij} - \tau, 0)$
+        \item Compute \textbf{centrality} of each bond in the graph
+        \item Select portfolio: $N$ bonds with \emph{lowest} centrality\\
+              (peripheral nodes $\Rightarrow$ less correlated $\Rightarrow$ better diversification)
+        \item Evaluate with \textbf{Sharpe ratio}: $\mathrm{SR} = (\mu_p - r_f) / \sigma_p$
+    \end{enumerate}
+
+    \bigskip
+    \begin{block}{Walk-forward evaluation (no data leakage)}
+        For year $t$: use correlation data from years $1, \ldots, t-1$ to rank bonds;
+        evaluate portfolio performance in year $t$.
+    \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{Literature: Graph Centralities in Portfolio Management}
+    \textbf{[Author et al., Year]} --- \emph{Portfolio Management Using Graph Centralities}
+
+    \bigskip
+    Applied the same graph centrality framework to \textbf{S\&P 500 stocks}:
+    \begin{itemize}
+        \item Correlation matrices constructed from daily stock returns
+        \item Katz and exponential centrality used to rank assets
+        \item Low-centrality portfolios shown to achieve better risk-adjusted returns
+        \item Results consistent across multiple market regimes
+    \end{itemize}
+
+    \bigskip
+    \textbf{Differences in this work:}
+    \begin{itemize}
+        \item Applied to \textbf{bond indices} rather than equities
+        \item Larger, more diverse universe: 944 indices across FTSE and iBoxx
+        \item Systematic hyperparameter search via walk-forward cross-validation
+    \end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{What Was Done --- Dataset and Pipeline}
+    \textbf{Dataset:}
+    \begin{itemize}
+        \item 944 bond indices downloaded from Datastream (FTSE and iBoxx series)
+        \item Coverage: government, corporate, emerging market, inflation-linked bonds
+        \item Daily data; training set 2017--2023, held-out test set 2024--2025
+    \end{itemize}
+
+    \bigskip
+    \textbf{Pipeline implemented:}
+    \begin{itemize}
+        \item 125-day rolling Pearson correlations (vectorised with prefix sums)
+        \item Yearly average correlation matrices (uniform and time-weighted)
+        \item ReLU thresholding, graph construction, centrality ranking
+        \item Portfolio return, volatility, and Sharpe ratio evaluation
+        \item Walk-forward hyperparameter search (grid over 96 combinations)
+    \end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{What Was Done --- Results}
+    Hyperparameter grid: ReLU threshold $\in \{0.0, 0.3, 0.5, 0.7\}$,
+    centrality $\in \{\text{Katz}, \text{Exponential}\}$,
+    $N \in \{5, 10, 20\}$, top/bottom, weighted/unweighted.
+
+    \bigskip
+    \begin{table}
+        \centering
+        \begin{tabular}{lc}
+            \toprule
+            Strategy & Avg.\ Sharpe Ratio (2018--2022) \\
+            \midrule
+            Best centrality strategy (outlier$^*$) & $+0.193$ \\
+            2nd best centrality strategy           & $+0.142$ \\
+            Equal-weight, all 944 bonds            & $-0.231$ \\
+            Vanguard Total Bond Market ETF         & $-0.607$ \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+
+    \medskip
+    {\small $^*$Katz centrality, no threshold, top 5 bonds (use\_top=True).
+    Of the top 10 combinations, this is the only one selecting the \emph{highest} centrality bonds;
+    the remaining 9 all select the \emph{lowest}, suggesting this result is not robust.
+    The 2nd best uses Exponential centrality, threshold 0.3, bottom 5 bonds.}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}{What Will Be Done}
+    \begin{itemize}
+        \setlength\itemsep{0.8em}
+        \item Evaluate the best hyperparameter configuration on the
+              \textbf{held-out test set} (2024--2025)
+        \item Analyse \textbf{which bond categories} tend to receive low centrality
+              and why they outperform
+        \item Investigate sensitivity of results to the \textbf{rolling window length}
+              (currently fixed at 125 days)
+        \item Compare against additional \textbf{classical baselines}
+              (minimum variance portfolio, equal-risk contribution)
+    \end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------
+\begin{frame}
+    \begin{center}
+        \vspace{2em}
+        {\Large Thank you for your attention}\\[1.5em]
+        {\large Questions?}\\[2em]
+        \textit{Viktor [Surname]}\\
+        \texttt{[email]}
+    \end{center}
+\end{frame}
+
+\end{document}
