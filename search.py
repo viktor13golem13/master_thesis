@@ -3,17 +3,8 @@ import numpy as np
 import pandas as pd
 
 from centrality import compute_centralities
-from metrics import sharpe_ratio
 from cache import load_or_build_cache, cache_to_numpy
-
-RF_COL = "FTSE 3-Month Treasury Bill Index - Total Return"
-
-
-def make_portfolio(ranking: list, top_n: int, use_top: bool) -> list[tuple[str, float]]:
-    """Select top_n or bottom_n bonds from a centrality ranking, equal-weighted."""
-    bonds = ranking[:top_n] if use_top else ranking[-top_n:]
-    fraction = 1.0 / top_n
-    return [(bond, fraction) for bond, _ in bonds]
+from evaluation import avg_sharpe_from_rankings, geometric_sharpe_from_rankings
 
 
 def compute_walk_forward_rankings(
@@ -66,38 +57,26 @@ def compute_walk_forward_rankings(
     return result
 
 
-def avg_sharpe_from_rankings(
-    df: pd.DataFrame,
-    year_rankings: dict,
-    top_n: int,
-    use_top: bool,
-) -> float:
-    """Evaluate average Sharpe ratio across all eval years using pre-computed rankings."""
-    sharpes = []
-    for eval_year, (last_ranking, last_matrix, col_names) in year_rankings.items():
-        portfolio = make_portfolio(last_ranking, top_n, use_top)
-        year_df = df[df["Date"].dt.year == eval_year]
-        try:
-            sr = sharpe_ratio(year_df, portfolio, col_names, last_matrix, RF_COL)
-            if np.isfinite(sr):
-                sharpes.append(sr)
-        except Exception:
-            pass
-    return np.mean(sharpes) if sharpes else float("nan")
-
-
 def hyperparameter_search(
     df: pd.DataFrame,
     param_grid: dict,
     cache_path: str = "cached_averages.pkl",
+    eval_fn=geometric_sharpe_from_rankings,
     verbose: bool = True,
 ) -> tuple[dict, list]:
     """
-    Grid search over hyperparameters using average walk-forward Sharpe ratio.
+    Grid search over hyperparameters using walk-forward Sharpe ratio.
 
     Rankings are computed once per unique (weighted, threshold, centrality_fn)
     triple, then reused across all top_n / use_top combinations — reducing the
     number of centrality computations from 96 to 16.
+
+    Parameters
+    ----------
+    eval_fn : callable
+        Function used to score each combination. Defaults to
+        geometric_sharpe_from_rankings (compounded returns). Pass
+        avg_sharpe_from_rankings for the arithmetic version.
 
     Parameters
     ----------
@@ -161,17 +140,15 @@ def hyperparameter_search(
     for idx, combo in enumerate(combinations, 1):
         params = dict(zip(keys, combo))
         key = (params["weighted"], params["relu_threshold"], params["centrality_fn"].__name__)
-        avg_sr = avg_sharpe_from_rankings(
-            df, rankings_cache[key], params["top_n"], params["use_top"]
-        )
-        results.append((params, avg_sr))
+        score = eval_fn(df, rankings_cache[key], params["top_n"], params["use_top"])
+        results.append((params, score))
         if verbose:
             print(
                 f"[{idx}/{len(combinations)}] weighted={params['weighted']}, "
                 f"threshold={params['relu_threshold']}, "
                 f"centrality={params['centrality_fn'].__name__}, "
                 f"top_n={params['top_n']}, "
-                f"use_top={params['use_top']}  →  avg_sharpe={avg_sr:.4f}",
+                f"use_top={params['use_top']}  →  sharpe={score:.4f}",
                 flush=True,
             )
 
@@ -179,7 +156,7 @@ def hyperparameter_search(
     best_params, best_score = results[0]
 
     if verbose:
-        print(f"\n=== BEST PARAMS (avg Sharpe={best_score:.4f}) ===")
+        print(f"\n=== BEST PARAMS (Sharpe={best_score:.4f}) ===")
         for k, v in best_params.items():
             print(f"  {k}: {v.__name__ if callable(v) else v}")
 
