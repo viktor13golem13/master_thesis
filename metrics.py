@@ -1,126 +1,63 @@
 import numpy as np
-import pandas as pd
+
+TRADING_DAYS = 252
 
 
-def portfolio_return(
-    dataset: pd.DataFrame,
-    portfolio: list[tuple[str, float]],
-) -> float:
+def lower_partial_moment(excess: np.ndarray, n: int) -> float:
+    """LPM_n = E[((r_b - r_p)_+)^n], given excess = r_p - r_b."""
+    return float(np.mean(np.maximum(-excess, 0.0) ** n))
+
+
+def performance_metrics(rp: np.ndarray, rf: np.ndarray, alpha: float = 0.05) -> dict[str, float]:
     """
-    Calculate the weighted return for a portfolio over the given period.
+    Out-of-sample performance of a daily portfolio return series.
+
+    Follows Section 2.3 of Arslan, Noferini & Vrontos (2024); the risk-free
+    rate also serves as the benchmark r_b for Omega, Sortino and Upside
+    Potential.
 
     Parameters
     ----------
-    dataset : pd.DataFrame
-        Bond index data with a 'Date' column and one column per bond.
-        Rows should be in chronological order.
-    portfolio : list of (bond_name, fraction) tuples
-        Fractions should sum to 1.
+    rp : np.ndarray
+        Daily simple portfolio returns.
+    rf : np.ndarray
+        Daily simple risk-free returns on the same days.
+    alpha : float
+        Tail probability for VaR and CVaR (default 5%).
 
     Returns
     -------
-    float
-        Weighted portfolio return (e.g. 0.04 means 4%).
+    dict with keys
+        CR      cumulative return over the period (1.0 means +100%)
+        ER      annualised mean return
+        SD      annualised volatility
+        SR      annualised Sharpe ratio, (E[r_p] - E[r_f]) / sd(r_p)
+        VaR     daily Value at Risk at level alpha (a loss is negative)
+        CVaR    daily Conditional VaR at level alpha
+        MaxDD   maximum drawdown of the portfolio value (fraction of peak)
+        Omega   K_1 + 1
+        Sortino K_2
+        UP      E[(r_p - r_b)_+] / sqrt(LPM_2)
     """
-    total = 0.0
-    for bond, fraction in portfolio:
-        series = dataset[bond].dropna()
-        bond_return = (series.iloc[-1] - series.iloc[0]) / series.iloc[0]
-        total += fraction * bond_return
-    return total
+    r = np.asarray(rp, dtype=float)
+    excess = r - np.asarray(rf, dtype=float)
 
+    value = np.cumprod(1.0 + r)
+    peak = np.maximum.accumulate(np.concatenate([[1.0], value]))[1:]
+    var = float(np.quantile(r, alpha))
+    sd = float(np.std(r, ddof=1))
+    lpm1 = lower_partial_moment(excess, 1)
+    lpm2 = lower_partial_moment(excess, 2)
 
-def risk_free_rate(dataset: pd.DataFrame, rf_col: str) -> float:
-    """
-    Extract the annualised risk-free rate from a bond index column.
-
-    Parameters
-    ----------
-    dataset : pd.DataFrame
-        Bond index data with a 'Date' column.
-    rf_col : str
-        Column name of the risk-free instrument (e.g. a treasury bill index).
-
-    Returns
-    -------
-    float
-        Annualised risk-free return over the period covered by the dataset.
-    """
-    series = dataset[rf_col].dropna()
-    n_days = len(series)
-    total_return = (series.iloc[-1] - series.iloc[0]) / series.iloc[0]
-    return (1 + total_return) ** (252 / n_days) - 1
-
-
-def portfolio_volatility(
-    dataset: pd.DataFrame,
-    portfolio: list[tuple[str, float]],
-    col_names: list[str],
-    corr_matrix: np.ndarray,
-) -> float:
-    """
-    Compute annualised portfolio volatility using sigma_p = sqrt(w^T Sigma w).
-
-    The covariance matrix is built from the correlation matrix and individual
-    bond return standard deviations: Sigma_ij = rho_ij * sigma_i * sigma_j.
-
-    Parameters
-    ----------
-    dataset : pd.DataFrame
-        Bond index data used to compute individual standard deviations.
-    portfolio : list of (bond_name, fraction) tuples
-    col_names : list of str
-        Column names corresponding to the axes of corr_matrix.
-    corr_matrix : np.ndarray of shape (n, n)
-
-    Returns
-    -------
-    float
-        Annualised portfolio volatility.
-    """
-    value_cols = [c for c in dataset.columns if c != "Date"]
-    daily_returns = dataset[value_cols].pct_change().dropna()
-
-    stds = np.array([daily_returns[col].std() * np.sqrt(252) for col in col_names])
-
-    D = np.diag(stds)
-    cov = D @ corr_matrix @ D
-
-    col_index = {name: i for i, name in enumerate(col_names)}
-    w = np.zeros(len(col_names))
-    for bond, fraction in portfolio:
-        w[col_index[bond]] = fraction
-
-    return np.sqrt(w @ cov @ w)
-
-
-def sharpe_ratio(
-    dataset: pd.DataFrame,
-    portfolio: list[tuple[str, float]],
-    col_names: list[str],
-    corr_matrix: np.ndarray,
-    rf_col: str,
-) -> float:
-    """
-    Compute the Sharpe Ratio: SR = (ER - R_f) / sigma_p.
-
-    Parameters
-    ----------
-    dataset : pd.DataFrame
-        Bond index data for the evaluation period.
-    portfolio : list of (bond_name, fraction) tuples
-    col_names : list of str
-        Column names corresponding to the axes of corr_matrix.
-    corr_matrix : np.ndarray of shape (n, n)
-    rf_col : str
-        Column name of the risk-free instrument in dataset.
-
-    Returns
-    -------
-    float
-        Sharpe Ratio.
-    """
-    er = portfolio_return(dataset, portfolio)
-    rf = risk_free_rate(dataset, rf_col)
-    vol = portfolio_volatility(dataset, portfolio, col_names, corr_matrix)
-    return (er - rf) / vol
+    return {
+        "CR": float(value[-1] - 1.0),
+        "ER": float(np.mean(r) * TRADING_DAYS),
+        "SD": float(sd * np.sqrt(TRADING_DAYS)),
+        "SR": float(np.mean(excess) / sd * np.sqrt(TRADING_DAYS)) if sd > 0 else float("nan"),
+        "VaR": var,
+        "CVaR": float(r[r <= var].mean()),
+        "MaxDD": float(np.max(1.0 - value / peak)),
+        "Omega": float(np.mean(excess) / lpm1 + 1.0) if lpm1 > 0 else float("nan"),
+        "Sortino": float(np.mean(excess) / np.sqrt(lpm2)) if lpm2 > 0 else float("nan"),
+        "UP": float(np.mean(np.maximum(excess, 0.0)) / np.sqrt(lpm2)) if lpm2 > 0 else float("nan"),
+    }

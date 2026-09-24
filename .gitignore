@@ -16,3 +16,10 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Virtual environment
+.venv/
+
+# Results and logs (regenerate with main.py)
+*.parquet
+*.log

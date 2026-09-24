@@ -1,163 +1,149 @@
+"""
+Parallel walk-forward grid search.
+
+A graph configuration (window weighting, shrinkage, graph type, threshold) is
+the unit of work: for every formation year it builds the graph, computes all
+centralities, and then evaluates every (centrality, selection, portfolio
+size) strategy on the following years.
+"""
 import itertools
+import multiprocessing as mp
+import zlib
+from dataclasses import asdict, dataclass
+
 import numpy as np
 import pandas as pd
 
-from centrality import compute_centralities
-from cache import load_or_build_cache, cache_to_numpy
-from evaluation import avg_sharpe_from_rankings, geometric_sharpe_from_rankings
+from centrality import all_centralities, rank_by_centrality
+from correlation import WINDOW_WEIGHTINGS, compute_yearly_correlations
+from evaluation import evaluate_sizes
+from graph import GRAPH_TYPES, GraphType, adjacency_matrix
+
+THRESHOLDS = tuple(k / 10 for k in range(10))
+PORTFOLIO_SIZES = (5, 10, 15, 20, 25, 30, 40, 50, 75, 100)
+SHRINKAGE = (False, True)
 
 
-def compute_walk_forward_rankings(
-    all_years: list,
-    np_cache: list,
-    col_names: list[str],
-    i_idx: np.ndarray,
-    j_idx: np.ndarray,
-    weighted: bool,
-    relu_threshold: float,
-    centrality_fn,
-) -> dict:
-    """
-    Compute centrality rankings for each eval year using only prior-year data.
+@dataclass(frozen=True)
+class GraphConfig:
+    weighting: str
+    shrink: bool
+    graph_type: GraphType
+    threshold: float
 
-    Parameters
-    ----------
-    all_years : list
-        All years in the training set in sorted order.
-    np_cache : list
-        Output of cache_to_numpy — one entry per eval year.
-    col_names : list of str
-    i_idx, j_idx : np.ndarray
-        Pair index arrays for reconstructing 3D matrices from flat pair values.
-    weighted : bool
-        Whether to use time-weighted yearly averages.
-    relu_threshold : float
-        Correlation values below this are set to 0.
-    centrality_fn : callable
-        A centrality function from centrality.py.
-
-    Returns
-    -------
-    dict mapping eval_year to (last_ranking, last_matrix, col_names).
-    """
-    p = len(col_names)
-    result = {}
-    for i, eval_year in enumerate(all_years[1:], start=1):
-        years, values = np_cache[i - 1][weighted]
-        pos_values = np.where(values >= relu_threshold, values, 0.0)
-        n = len(years)
-        matrices = np.zeros((n, p, p), dtype=float)
-        matrices[:, i_idx, j_idx] = pos_values
-        matrices[:, j_idx, i_idx] = pos_values
-
-        rankings = compute_centralities(centrality_fn, years, col_names, matrices)
-        last_ranking = list(rankings.values())[-1]
-        last_matrix = matrices[-1]
-        result[eval_year] = (last_ranking, last_matrix, col_names)
-    return result
+    def seed(self) -> int:
+        """Stable seed for tie-breaking, so results are reproducible."""
+        return zlib.crc32(repr(self).encode())
 
 
-def hyperparameter_search(
-    df: pd.DataFrame,
-    param_grid: dict,
-    cache_path: str = "cached_averages.pkl",
-    eval_fn=geometric_sharpe_from_rankings,
-    verbose: bool = True,
-) -> tuple[dict, list]:
-    """
-    Grid search over hyperparameters using walk-forward Sharpe ratio.
-
-    Rankings are computed once per unique (weighted, threshold, centrality_fn)
-    triple, then reused across all top_n / use_top combinations — reducing the
-    number of centrality computations from 96 to 16.
-
-    Parameters
-    ----------
-    eval_fn : callable
-        Function used to score each combination. Defaults to
-        geometric_sharpe_from_rankings (compounded returns). Pass
-        avg_sharpe_from_rankings for the arithmetic version.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Full training dataset with 'Date' column.
-    param_grid : dict
-        Keys: weighted, relu_threshold, centrality_fn, top_n, use_top.
-        Values: lists of values to try.
-    cache_path : str
-        Path to the pre-computed correlation averages pickle file.
-    verbose : bool
-
-    Returns
-    -------
-    best_params : dict
-    results : list of (params, avg_sharpe) sorted descending by avg_sharpe.
-    """
-    df = df.copy()
-    df["Date"] = pd.to_datetime(df["Date"])
-    all_years = sorted(df["Date"].dt.year.unique())
-
-    cached_averages = load_or_build_cache(df, cache_path, verbose)
-
-    if verbose:
-        print("Converting cache to numpy arrays...", flush=True)
-    np_cache, col_names, i_idx, j_idx = cache_to_numpy(cached_averages)
-    del cached_averages
-    if verbose:
-        print("  Done.", flush=True)
-
-    # Phase 1: compute rankings for each unique (weighted, threshold, centrality) triple
-    unique_triples = list(itertools.product(
-        param_grid["weighted"],
-        param_grid["relu_threshold"],
-        param_grid["centrality_fn"],
-    ))
-    if verbose:
-        print(f"\nComputing rankings for {len(unique_triples)} unique triples...")
-
-    rankings_cache = {}
-    for t_idx, (weighted, relu_threshold, centrality_fn) in enumerate(unique_triples, 1):
-        key = (weighted, relu_threshold, centrality_fn.__name__)
-        rankings_cache[key] = compute_walk_forward_rankings(
-            all_years, np_cache, col_names, i_idx, j_idx,
-            weighted, relu_threshold, centrality_fn,
+def all_graph_configs() -> list[GraphConfig]:
+    return [
+        GraphConfig(weighting, shrink, graph_type, threshold)
+        for weighting, shrink, graph_type, threshold in itertools.product(
+            WINDOW_WEIGHTINGS, SHRINKAGE, GRAPH_TYPES, THRESHOLDS,
         )
+    ]
+
+
+# Data shared with worker processes. Set before the pool is created; with the
+# fork start method the workers inherit it without copying or pickling.
+_SHARED: dict = {}
+
+
+def _correlation_task(args):
+    weighting, shrink, year = args
+    C = compute_yearly_correlations(_SHARED["returns"], [year], weighting=weighting, shrink=shrink)[year]
+    return (weighting, shrink, year), C
+
+
+def _graph_config_task(config: GraphConfig) -> list[dict]:
+    correlations = _SHARED["correlations"]
+    formation_years = _SHARED["formation_years"]
+    returns_by_year = _SHARED["returns_by_year"]
+    rf_by_year = _SHARED["rf_by_year"]
+    n_picks = max(PORTFOLIO_SIZES)
+
+    picks = {}      # (measure, param, selection) -> {formation_year: indices}
+    isolated = []
+    for year in formation_years:
+        A = adjacency_matrix(correlations[(config.weighting, config.shrink, year)], config.threshold, config.graph_type)
+        isolated.append(float(np.mean((A - np.diag(np.diag(A))).sum(axis=1) == 0)))
+        rng = np.random.default_rng([config.seed(), year])
+        for (measure, param), scores in all_centralities(A, config.graph_type.weighted).items():
+            order = rank_by_centrality(scores, rng)
+            picks.setdefault((measure, param, "central"), {})[year] = order[:n_picks]
+            picks.setdefault((measure, param, "peripheral"), {})[year] = order[::-1][:n_picks]
+
+    base = {
+        "weighting": config.weighting,
+        "shrink": config.shrink,
+        **{k: v for k, v in asdict(config.graph_type).items()},
+        "threshold": config.threshold,
+        "isolated_frac": float(np.mean(isolated)),
+    }
+    rows = []
+    for (measure, param, selection), by_year in picks.items():
+        metrics = evaluate_sizes(returns_by_year, rf_by_year, by_year, PORTFOLIO_SIZES)
+        for size, m in zip(PORTFOLIO_SIZES, metrics):
+            rows.append({**base, "centrality": measure, "alpha": param,
+                         "selection": selection, "m": size, **m})
+    return rows
+
+
+def run_grid_search(
+    returns: pd.DataFrame,
+    rf_returns: pd.Series,
+    formation_years: list[int],
+    configs: list[GraphConfig] | None = None,
+    processes: int | None = None,
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """
+    Evaluate every strategy of the grid, walking forward year by year.
+
+    Parameters
+    ----------
+    returns : pd.DataFrame
+        Daily simple returns of the investable series, covering every
+        formation year and the year after each.
+    rf_returns : pd.Series
+        Daily simple risk-free returns on the same days.
+    formation_years : list of int
+        Years whose correlations select the portfolio held in the next year.
+    configs : list of GraphConfig, optional
+        Graph configurations to run (default: the full grid).
+    processes : int, optional
+        Worker processes (default: all cores).
+
+    Returns
+    -------
+    pd.DataFrame, one row per strategy, sorted by Sharpe ratio (descending).
+    """
+    configs = configs if configs is not None else all_graph_configs()
+    years = returns.index.year
+    _SHARED.clear()
+    _SHARED.update(
+        returns=returns,
+        formation_years=formation_years,
+        returns_by_year={y + 1: returns.loc[years == y + 1].to_numpy(dtype=float) for y in formation_years},
+        rf_by_year={y + 1: rf_returns.loc[rf_returns.index.year == y + 1].to_numpy(dtype=float) for y in formation_years},
+    )
+
+    context = mp.get_context("fork")
+    correlation_keys = sorted({(c.weighting, c.shrink) for c in configs})
+    with context.Pool(processes) as pool:
+        tasks = [(w, s, y) for (w, s) in correlation_keys for y in formation_years]
         if verbose:
-            print(
-                f"  [{t_idx}/{len(unique_triples)}] weighted={weighted}, "
-                f"threshold={relu_threshold}, centrality={centrality_fn.__name__}",
-                flush=True,
-            )
+            print(f"Computing {len(tasks)} yearly correlation matrices...", flush=True)
+        _SHARED["correlations"] = dict(pool.map(_correlation_task, tasks))
 
-    # Phase 2: evaluate all combinations — only top_n and use_top vary here
-    keys = list(param_grid.keys())
-    combinations = list(itertools.product(*[param_grid[k] for k in keys]))
-    if verbose:
-        print(f"\nSearching {len(combinations)} hyperparameter combinations...\n")
-
-    results = []
-    for idx, combo in enumerate(combinations, 1):
-        params = dict(zip(keys, combo))
-        key = (params["weighted"], params["relu_threshold"], params["centrality_fn"].__name__)
-        score = eval_fn(df, rankings_cache[key], params["top_n"], params["use_top"])
-        results.append((params, score))
+    rows = []
+    with context.Pool(processes) as pool:  # new pool: workers must inherit the correlations
         if verbose:
-            print(
-                f"[{idx}/{len(combinations)}] weighted={params['weighted']}, "
-                f"threshold={params['relu_threshold']}, "
-                f"centrality={params['centrality_fn'].__name__}, "
-                f"top_n={params['top_n']}, "
-                f"use_top={params['use_top']}  →  sharpe={score:.4f}",
-                flush=True,
-            )
+            print(f"Evaluating {len(configs)} graph configurations...", flush=True)
+        for k, result in enumerate(pool.imap_unordered(_graph_config_task, configs), 1):
+            rows.extend(result)
+            if verbose and (k % 25 == 0 or k == len(configs)):
+                print(f"  {k}/{len(configs)} graphs done ({len(rows)} strategies)", flush=True)
 
-    results.sort(key=lambda x: x[1], reverse=True)
-    best_params, best_score = results[0]
-
-    if verbose:
-        print(f"\n=== BEST PARAMS (Sharpe={best_score:.4f}) ===")
-        for k, v in best_params.items():
-            print(f"  {k}: {v.__name__ if callable(v) else v}")
-
-    return best_params, results
+    return pd.DataFrame(rows).sort_values("SR", ascending=False, ignore_index=True)
