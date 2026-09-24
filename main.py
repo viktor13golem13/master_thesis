@@ -1,41 +1,57 @@
+"""
+Run the grid search on the training years and print the best strategies.
+
+    .venv/bin/python main.py
+"""
 import os
 
-# One BLAS thread per process: parallelism comes from the worker pool.
-for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(var, "1")
+# Use one core per worker process; the parallelism comes from running many
+# workers at once. Must be set before numpy is imported.
+for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(variable, "1")
 
 import time  # noqa: E402
 
 import pandas as pd  # noqa: E402
 
-from clean import clean_dataset  # noqa: E402
-from correlation import daily_returns  # noqa: E402
-from evaluation import equal_weight_all  # noqa: E402
-from search import run_grid_search  # noqa: E402
+from thesis import config  # noqa: E402
+from thesis.backtest import equal_weight_benchmark, split_by_year  # noqa: E402
+from thesis.data import daily_returns, load_dataset  # noqa: E402
+from thesis.grid_search import run_grid_search  # noqa: E402
 
-RESULTS_PATH = "results_train.parquet"
+SHOWN_COLUMNS = ["weighting", "shrink", "sign", "loops", "weighted", "threshold",
+                 "centrality", "alpha", "selection", "m", "ER", "SD", "SR", "MaxDD", "Sortino"]
 
-if __name__ == "__main__":
-    train, test, rf, report = clean_dataset()
-    returns = daily_returns(train)
-    rf_returns = daily_returns(rf).loc[returns.index]
 
+def main():
+    # 1. Data
+    dataset = load_dataset()
+    dataset.report.to_csv(config.CLEANING_REPORT_PATH, index=False)
+    returns = daily_returns(dataset.train)
+    rf_returns = daily_returns(dataset.risk_free).loc[returns.index]
+
+    # Every train year except the last forms a portfolio held in the next year.
     train_years = sorted(set(returns.index.year))
-    formation_years = train_years[:-1]          # the last train year is only held, never formed
+    formation_years = train_years[:-1]
+    holding_years = train_years[1:]
 
+    # 2-6. Grid search
     start = time.time()
     results = run_grid_search(returns, rf_returns, formation_years)
-    results.to_parquet(RESULTS_PATH, index=False)
-    print(f"\n{len(results)} strategies in {time.time() - start:.0f}s, written to {RESULTS_PATH}")
+    results.to_parquet(config.TRAIN_RESULTS_PATH, index=False)
+    print(f"\n{len(results)} strategies in {time.time() - start:.0f}s, "
+          f"written to {config.TRAIN_RESULTS_PATH}")
 
-    holding_years = [y + 1 for y in formation_years]
-    by_year = {y: returns.loc[returns.index.year == y].to_numpy() for y in holding_years}
-    rf_by_year = {y: rf_returns.loc[rf_returns.index.year == y].to_numpy() for y in holding_years}
-    benchmark = equal_weight_all(by_year, rf_by_year, holding_years)
+    # Benchmark: every bond with equal weight
+    benchmark = equal_weight_benchmark(
+        split_by_year(returns, holding_years), split_by_year(rf_returns, holding_years), holding_years,
+    )
 
     pd.set_option("display.width", 250)
-    shown = ["weighting", "shrink", "sign", "loops", "weighted", "threshold", "centrality", "alpha",
-             "selection", "m", "ER", "SD", "SR", "MaxDD", "Sortino"]
     print(f"\nTop 15 strategies (holding years {holding_years[0]}-{holding_years[-1]}):")
-    print(results[shown].head(15).round(4).to_string(index=False))
-    print("\nEqual weight, all series:", {k: round(v, 4) for k, v in benchmark.items()})
+    print(results[SHOWN_COLUMNS].head(15).round(4).to_string(index=False))
+    print("\nEqual weight, all bonds:", {k: round(v, 4) for k, v in benchmark.items()})
+
+
+if __name__ == "__main__":
+    main()

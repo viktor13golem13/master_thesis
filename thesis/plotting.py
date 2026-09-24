@@ -1,64 +1,9 @@
-from dataclasses import dataclass
-
+"""
+Drawing a correlation graph (for figures in the thesis; not used by the pipeline).
+"""
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-
-
-@dataclass(frozen=True)
-class GraphType:
-    """
-    How a correlation matrix C is turned into an adjacency matrix.
-
-    sign
-        "positive" — edges for C_ij > θ (paper transforms A1 and A2)
-        "negative" — edges for -C_ij > θ (paper transform A3, (-C)_+)
-        "absolute" — edges for |C_ij| > θ (paper transform A4, or A1 with |C|)
-    loops
-        Keep the diagonal (paper options 1, 2, 5, 6) or drop it (3, 4, 7, 8).
-    weighted
-        Edge weight is the correlation value (options 5-8) or 1 (options 1-4).
-
-    Since every threshold θ is >= 0, the paper's 4 transforms x 8 options give
-    only these 10 distinct graphs: the negative part has a zero diagonal, so
-    it never has loops.
-    """
-    sign: str
-    loops: bool
-    weighted: bool
-
-    @property
-    def name(self) -> str:
-        return f"{self.sign}{'_loops' if self.loops else ''}{'_weighted' if self.weighted else '_unweighted'}"
-
-
-GRAPH_TYPES = [
-    GraphType(sign, loops, weighted)
-    for sign in ("positive", "negative", "absolute")
-    for loops in (False, True)
-    for weighted in (True, False)
-    if not (sign == "negative" and loops)
-]
-
-
-def adjacency_matrix(C: np.ndarray, threshold: float, graph_type: GraphType) -> np.ndarray:
-    """
-    Adjacency matrix A = [T > θ] ∘ T (weighted) or A = [T > θ] (unweighted),
-    where T is C, -C or |C| according to graph_type.sign, with its diagonal
-    set to 0 unless graph_type.loops (Arslan, Noferini & Vrontos 2024, Sec. 3.2).
-    """
-    if graph_type.sign == "positive":
-        T = C.copy()
-    elif graph_type.sign == "negative":
-        T = -C
-    elif graph_type.sign == "absolute":
-        T = np.abs(C)
-    else:
-        raise ValueError(f"Unknown sign {graph_type.sign!r}")
-    if not graph_type.loops:
-        np.fill_diagonal(T, 0.0)
-    edges = T > threshold
-    return np.where(edges, T, 0.0) if graph_type.weighted else edges.astype(float)
 
 
 def visualise_graph(
