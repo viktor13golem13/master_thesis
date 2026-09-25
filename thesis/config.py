@@ -5,7 +5,7 @@ Change a value here and rerun main.py; no other file needs to change.
 """
 from thesis.centrality import (
     betweenness, degree, exponential, exponential_subgraph, katz, katz_min,
-    katz_subgraph, nbtw, nbtw_subgraph,
+    katz_subgraph, nbtw, nbtw_exponential, nbtw_exponential_subgraph, nbtw_subgraph,
 )
 from thesis.graph import GraphType
 from thesis.metrics import sharpe_ratio
@@ -13,6 +13,7 @@ from thesis.metrics import sharpe_ratio
 # --------------------------------------------------------------------- files
 TRAIN_PATH = "dataset/train.csv"
 TEST_PATH = "dataset/test.csv"
+BENCHMARK_PATH = "dataset/raw_files/vanguard.csv"   # Vanguard Total Bond Market ETF, the paper's S&P 500 analogue
 CLEANING_REPORT_PATH = "dataset/cleaning_report.csv"
 TRAIN_RESULTS_PATH = "results_train.parquet"
 
@@ -56,7 +57,9 @@ EXPONENTIAL_BETAS = tuple(k / 10 for k in range(1, 11))   # β in e^{βA}, maxim
 
 # Every (centrality function, parameter) pair tried on each graph.
 # The order matters only for reproducibility: ties between bonds are broken
-# with random numbers drawn in this order.
+# with random numbers drawn in this order, so new measures go at the end.
+# The NBTW exponential measures exist only for unweighted graphs; on
+# weighted graphs they are skipped.
 CENTRALITIES = [
     (degree, None),
     *[(measure, f) for f in KATZ_FRACTIONS for measure in (katz, katz_subgraph)],
@@ -64,6 +67,7 @@ CENTRALITIES = [
     *[(measure, b) for b in EXPONENTIAL_BETAS for measure in (exponential, exponential_subgraph)],
     *[(measure, f) for f in NBTW_FRACTIONS for measure in (nbtw, nbtw_subgraph)],
     (betweenness, None),
+    *[(measure, b) for b in EXPONENTIAL_BETAS for measure in (nbtw_exponential, nbtw_exponential_subgraph)],
 ]
 
 # ------------------------------------------------------------- 5. backtest

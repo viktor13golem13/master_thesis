@@ -86,7 +86,10 @@ def pick_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float
 
         rng = np.random.default_rng([graph_config.seed(), year])
         for centrality, parameter in config.CENTRALITIES:
-            ranking = rank_by_centrality(centrality(graph, parameter), rng)
+            scores = centrality(graph, parameter)
+            if scores is None:          # measure not defined for this kind of graph
+                continue
+            ranking = rank_by_centrality(scores, rng)
             for selection in config.SELECTIONS:
                 key = (centrality.__name__, parameter, selection)
                 picks.setdefault(key, {})[year] = select_bonds(ranking, selection, max_size)

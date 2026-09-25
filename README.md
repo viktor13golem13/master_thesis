@@ -39,7 +39,7 @@ The pipeline runs top to bottom in this order:
 | 1 | [thesis/data.py](thesis/data.py) | Loads prices, removes 200 unusable series (duplicates, cash, broken or stale data) | — |
 | 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from 125-day rolling windows; optional Ledoit–Wolf shrinkage | 3.1 |
 | 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (10 graph types, threshold θ) | 3.2–3.3 |
-| 4 | [thesis/centrality.py](thesis/centrality.py) | Degree, Katz, Katz-min, exponential, their subgraph versions, NBTW, betweenness | 2.1, 3.4 |
+| 4 | [thesis/centrality.py](thesis/centrality.py) | Degree, Katz, Katz-min, exponential, their subgraph versions, NBTW (resolvent and exponential), betweenness | 2.1, 3.4 |
 | 5 | [thesis/backtest.py](thesis/backtest.py) | Holds the chosen bonds for a year, produces daily portfolio returns | 2.2, 4 |
 | | [thesis/metrics.py](thesis/metrics.py) | Sharpe, Sortino, drawdown, VaR, … — one function per metric | 2.3 |
 | 6 | [thesis/grid_search.py](thesis/grid_search.py) | Runs steps 2–5 for every combination of settings | 4 |
@@ -67,11 +67,11 @@ Two conventions keep the pieces interchangeable:
 | Shrinkage | no, yes |
 | Graph type | sign (positive / negative / absolute) × loops × weighted = 10 |
 | Threshold θ | 0.0, 0.1, …, 0.9 |
-| Centrality | 59 variants (measure × parameter) |
+| Centrality | 59 variants (measure × parameter), plus 20 NBTW exponential variants on unweighted graphs |
 | Selection | central, peripheral |
 | Portfolio size m | 5, 10, 15, 20, 25, 30, 40, 50, 75, 100 |
 
-In total 708,000 strategies, evaluated walk-forward: the correlations of
+In total 828,000 strategies, evaluated walk-forward: the correlations of
 year *y* choose the bonds held in year *y + 1*, with equal weights.
 
 ## Differences from the paper
@@ -87,5 +87,14 @@ year *y* choose the bonds held in year *y + 1*, with equal weights.
 - **Window weighting** is a parameter, because the printed formula gives older
   windows more weight, the opposite of Pozzi et al. (2013).
 - **Portfolio sizes**: 10 values of *m* instead of *m* = 10.
+- **NBTW exponential centralities only on unweighted graphs.** For weighted
+  graphs the only known formula (Arrigo, Higham, Noferini & Wood 2024,
+  Thm 4.6) works on an m × m edge matrix, with m up to ~550,000 directed
+  edges here, which is not feasible. Unweighted graphs use the 2n × 2n
+  formula of Arrigo, Grindrod, Higham & Noferini (2018, Thm 2.1).
+- **Benchmark**: the Vanguard Total Bond Market ETF instead of the S&P 500
+  index, plus the equal-weight portfolio of all bonds. The Vanguard series
+  is a price series (it excludes coupons), so it understates the ETF's
+  total return.
 - **Only equal weights** so far; the paper's minimum-variance and
   mean-variance portfolios are optional future work.

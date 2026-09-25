@@ -20,6 +20,7 @@ class Dataset:
     train: pd.DataFrame        # price levels of investable series, indexed by date
     test: pd.DataFrame
     risk_free: pd.Series       # 3-month T-bill price levels, train and test
+    benchmark: pd.Series       # Vanguard Total Bond Market ETF prices on the same days
     report: pd.DataFrame       # every removed series and the rule that removed it
 
 
@@ -109,4 +110,16 @@ def load_dataset(verbose: bool = True) -> Dataset:
         for reason, count in report["reason"].value_counts().items():
             print(f"  removed {count:4d}  {reason}")
 
-    return Dataset(train[keep], test[keep], full[config.RISK_FREE_SERIES], report)
+    return Dataset(train[keep], test[keep], full[config.RISK_FREE_SERIES],
+                   load_benchmark(full.index), report)
+
+
+def load_benchmark(dates: pd.DatetimeIndex) -> pd.Series:
+    """
+    Vanguard Total Bond Market ETF prices on the given days (the paper
+    compares against the S&P 500 index; this is the bond-market analogue).
+    The raw file repeats two days in May 2026; the repeats are dropped.
+    """
+    prices = pd.read_csv(config.BENCHMARK_PATH, index_col="Date", parse_dates=True).iloc[:, 0]
+    prices = prices[~prices.index.duplicated()].sort_index()
+    return prices.reindex(dates)

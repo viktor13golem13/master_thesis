@@ -1,10 +1,12 @@
+import math
+
 import numpy as np
 import pytest
 from scipy.linalg import expm
 
 from thesis.centrality import (
     degree, exponential, exponential_subgraph, katz, katz_min, katz_subgraph,
-    nbtw_matrix, nbtw_radius, rank_by_centrality,
+    nbtw_exponential, nbtw_exponential_subgraph, nbtw_matrix, nbtw_radius, rank_by_centrality,
 )
 from thesis.graph import Graph
 
@@ -109,3 +111,42 @@ def test_ties_are_broken_randomly_not_by_column_order():
     assert all(set(tail) == {1, 2, 3} for tail in tails)
     assert len(tails) > 1
     assert list(rank_by_centrality(scores, np.random.default_rng(0))[:2]) == [0, 4]
+
+
+# ------------------------------------------------------ exponential NBTW
+
+def nonbacktracking_walks_by_length(A, max_length):
+    """[p_0(A), p_1(A), ...]: weighted NBTW counts of each length, counted step by step."""
+    n = A.shape[0]
+    counts = [np.eye(n), A.copy()]
+    W = np.einsum("sc,sp->spc", A, np.eye(n))
+    for _ in range(2, max_length + 1):
+        W = np.einsum("spc,cd->scd", W, A) - np.einsum("spc,cp->scp", W, A)
+        counts.append(W.sum(axis=1))
+    return counts
+
+
+@pytest.mark.parametrize("loops", [False, True])
+def test_nbtw_exponential_matches_brute_force_walk_count(loops):
+    A = (random_weighted_graph(8, seed=11, loops=loops, density=0.5) > 0).astype(float)
+    A[7, :] = A[:, 7] = 0
+    A[7, 0] = A[0, 7] = 1                                    # node 7 is a leaf
+    graph = Graph(A, weighted=False)
+    c = max(np.max(np.abs(np.linalg.eigvalsh(A))), 1.0)
+    p = nonbacktracking_walks_by_length(A, 60)
+    for beta in (0.3, 1.0):
+        F = sum(beta ** k * p[k] / math.factorial(k) for k in range(61)) * np.exp(-beta * c)
+        assert np.allclose(nbtw_exponential(graph, beta), F.sum(axis=1))
+        assert np.allclose(nbtw_exponential_subgraph(graph, beta), np.diag(F))
+
+
+def test_nbtw_exponential_is_skipped_on_weighted_graphs():
+    graph = Graph(random_weighted_graph(6, seed=12), weighted=True)
+    assert nbtw_exponential(graph, 0.5) is None
+    assert nbtw_exponential_subgraph(graph, 0.5) is None
+
+
+def test_nbtw_exponential_does_not_overflow_on_dense_graphs():
+    A = np.ones((300, 300)) - np.eye(300)                     # ρ = 299
+    scores = nbtw_exponential(Graph(A, weighted=False), 1.0)
+    assert np.all(np.isfinite(scores)) and np.all(scores > 0)
