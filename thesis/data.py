@@ -1,10 +1,13 @@
 """
-Step 1 — Load and clean the bond index data.
+Steps 0 and 1 — Build, load and clean the bond index data.
 
-The raw files hold daily price levels of 945 FTSE and iBoxx bond indices
-(train: 2017-2023, test: 2024-2025). Some series are unusable, so each rule
-below lists the series it removes; together they define the investable
-universe, which is the same for train and test.
+Step 0 rebuilds train.csv and test.csv from the raw Datastream downloads:
+945 FTSE and iBoxx bond indices with daily price levels (train: 2017-2023,
+test: 2024-2025).
+
+Step 1 removes series that are unusable for the analysis. Each rule lists
+the series it removes; together they define the investable universe, which
+is the same for train and test.
 """
 import re
 from dataclasses import dataclass
@@ -29,7 +32,51 @@ def daily_returns(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
     return prices.pct_change(fill_method=None).iloc[1:]
 
 
-# --------------------------------------------------------- cleaning rules
+# ------------------------------------------- step 0: building train and test
+
+def read_export(path: str) -> pd.DataFrame:
+    """One raw download: dates in the first column (headed 'Name' or 'Date'), one column per series."""
+    prices = pd.read_csv(path, index_col=0, parse_dates=True)
+    prices.index.name = "Date"
+    return prices
+
+
+def join_raw_files() -> pd.DataFrame:
+    """
+    All raw downloads side by side, on the union of their dates.
+
+    Datastream writes a column headed '#ERROR' for every series the licence
+    could not download ('$$ER: E100, ACCESS DENIED'); those are dropped, as
+    is 'Name.1', a second copy of the dates in the later download.
+    """
+    exports = pd.concat([read_export(path) for path in config.DATASTREAM_EXPORTS], axis=1)
+    exports = exports.loc[:, ~exports.columns.str.startswith("#ERROR")]
+    later = read_export(config.LATER_EXPORT).drop(columns="Name.1")
+    return pd.concat([exports, later], axis=1).sort_index()
+
+
+def series_without_full_history(prices: pd.DataFrame) -> list[str]:
+    """Series with a missing value anywhere between the first train day and the last test day."""
+    period = prices.loc[f"{config.TRAIN_YEARS[0]}-01-01":f"{config.TEST_YEARS[1]}-12-31"]
+    return list(period.columns[period.isna().any()])
+
+
+def build_train_test() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Rebuild train and test price levels from the raw downloads.
+
+    Joins every download, keeps only series with data on every day of
+    2017-2025 (and not listed in config.REMOVED_BY_HAND), then splits by year.
+    """
+    prices = join_raw_files()
+    removed = set(series_without_full_history(prices)) | set(config.REMOVED_BY_HAND)
+    prices = prices[[c for c in prices.columns if c not in removed]]
+    train = prices.loc[f"{config.TRAIN_YEARS[0]}-01-01":f"{config.TRAIN_YEARS[1]}-12-31"]
+    test = prices.loc[f"{config.TEST_YEARS[0]}-01-01":f"{config.TEST_YEARS[1]}-12-31"]
+    return train, test
+
+
+# ------------------------------------------- step 1: cleaning rules
 
 def duplicate_series(prices: pd.DataFrame) -> list[str]:
     """Exact copies of an earlier column (left over from merging the raw files)."""
@@ -89,7 +136,7 @@ def removed_series(prices: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(list(reasons.items()), columns=["series", "reason"])
 
 
-# ------------------------------------------------------------------ loading
+# -------------------------------------------------- step 1: loading
 
 def load_dataset(verbose: bool = True) -> Dataset:
     """

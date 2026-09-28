@@ -17,6 +17,28 @@ BENCHMARK_PATH = "dataset/raw_files/vanguard.csv"   # Vanguard Total Bond Market
 CLEANING_REPORT_PATH = "dataset/cleaning_report.csv"
 TRAIN_RESULTS_PATH = "results_train.parquet"
 
+# ------------------------------------------------ 0. building train and test
+# Datastream exports that share the same dates, in the order they are joined.
+DATASTREAM_EXPORTS = [
+    "dataset/raw_files/datase3.csv",
+    "dataset/raw_files/dataset1.csv",
+    "dataset/raw_files/dataset2.csv",
+    "dataset/raw_files/dataset4.csv",
+]
+# A later, larger download with slightly different dates, joined by date.
+LATER_EXPORT = "dataset/raw_files/new_bonds.csv"
+
+TRAIN_YEARS = (2017, 2023)
+TEST_YEARS = (2024, 2025)
+
+# Removed by hand when the files were first built. They pass every other rule,
+# but, like the BPAM BNM BOND index that was kept, they stopped moving in
+# September 2016 (the stale-series rule in step 1 removes all three anyway).
+REMOVED_BY_HAND = [
+    "FTSE BPAM BNM MIXED IDX - TOT RETURN IND",
+    "FTSE BPAM BNM SUKUK IDX - TOT RETURN IND",
+]
+
 # ------------------------------------------------------------------ 1. data
 RISK_FREE_SERIES = "FTSE 3-Month Treasury Bill Index - Total Return"
 

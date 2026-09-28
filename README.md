@@ -36,6 +36,7 @@ The pipeline runs top to bottom in this order:
 
 | Step | File | What it does | Paper |
 |---|---|---|---|
+| 0 | [thesis/data.py](thesis/data.py) | Rebuilds `train.csv` / `test.csv` from the raw Datastream downloads (`build_train_test`) | — |
 | 1 | [thesis/data.py](thesis/data.py) | Loads prices, removes 200 unusable series (duplicates, cash, broken or stale data) | — |
 | 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from 125-day rolling windows; optional Ledoit–Wolf shrinkage | 3.1 |
 | 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (10 graph types, threshold θ) | 3.2–3.3 |
@@ -58,6 +59,22 @@ Two conventions keep the pieces interchangeable:
 
 - every centrality is `centrality(graph, parameter) -> scores`
 - every metric is `metric(portfolio_returns, risk_free_returns) -> float`
+
+## How train.csv and test.csv were built
+
+`thesis.data.build_train_test()` recreates both files from `dataset/raw_files/`,
+and a test checks that the result is identical to the files on disk:
+
+1. Join the four Datastream exports (`datase3`, `dataset1`, `dataset2`,
+   `dataset4`), dropping the 11 `#ERROR` columns (series the licence could
+   not download).
+2. Add `new_bonds.csv` by date.
+3. Keep only series with data on every day of 2017–2025 (this removes 31
+   series that start later), minus two BPAM series removed by hand.
+4. Split by year: 2017–2023 is train, 2024–2025 is test.
+
+Constant and duplicate series were *not* removed at this stage; step 1
+(`load_dataset`) removes them, together with other unusable series.
 
 ## The grid
 
