@@ -22,9 +22,9 @@ def test_unweighted_graphs_match_paper_figure_2(paper_option, graph_type, expect
 def test_weighted_graphs_keep_the_correlation_on_each_edge(graph_type):
     A = adjacency_matrix(C_TOY, 0.25, graph_type)
     edges = adjacency_matrix(C_TOY, 0.25, GraphType(graph_type.sign, graph_type.loops, False))
-    T = {"positive": C_TOY, "negative": -C_TOY, "absolute": np.abs(C_TOY)}[graph_type.sign]
+    T = {"positive": C_TOY, "absolute": np.abs(C_TOY)}[graph_type.sign]
     assert np.allclose(A, edges * T)
 
 
-def test_there_are_ten_distinct_graph_types():
-    assert len(GRAPH_TYPES) == len(set(GRAPH_TYPES)) == 10
+def test_there_are_eight_distinct_graph_types():
+    assert len(GRAPH_TYPES) == len(set(GRAPH_TYPES)) == 8

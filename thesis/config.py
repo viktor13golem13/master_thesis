@@ -62,14 +62,13 @@ SHRINKAGE_OPTIONS = (False, True)                    # Ledoit-Wolf shrinkage (pa
 # ----------------------------------------------------------------- 3. graph
 THRESHOLDS = tuple(k / 10 for k in range(10))        # θ = 0.0, 0.1, ..., 0.9 (paper, Sec. 3.3)
 
-# The paper's 4 transforms x 8 adjacency options give only these 10
-# distinct graphs, because every threshold is >= 0 (see graph.GraphType).
+# The paper's 4 transforms x 8 adjacency options give only these 8 distinct
+# graphs, because every threshold is >= 0 (see graph.GraphType).
 GRAPH_TYPES = [
     GraphType(sign, loops, weighted)
-    for sign in ("positive", "negative", "absolute")
+    for sign in ("positive", "absolute")
     for loops in (False, True)
     for weighted in (True, False)
-    if not (sign == "negative" and loops)            # (-C)_+ has a zero diagonal
 ]
 
 # ------------------------------------------------------------ 4. centrality

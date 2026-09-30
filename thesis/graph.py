@@ -18,18 +18,20 @@ class GraphType:
 
     sign
         "positive"  edges where C_ij > θ          (paper transforms A1, A2)
-        "negative"  edges where -C_ij > θ         (paper transform A3, (-C)_+)
-        "absolute"  edges where |C_ij| > θ        (paper transform A4)
+        "absolute"  edges where |C_ij| > θ        (paper transforms A3, A4)
     loops
         Keep each node's edge to itself (paper options 1, 2, 5, 6)
         or remove it (options 3, 4, 7, 8).
     weighted
         Edges carry the correlation value (options 5-8) or 1 (options 1-4).
 
-    Because θ >= 0, the paper's 4 transforms x 8 options give only 10
+    Because θ >= 0, the paper's 4 transforms x 8 options give only 8
     different graphs: raw C and its positive part (A1, A2) keep the same
-    edges, and the negative part has no loops since its diagonal is 0.
-    config.GRAPH_TYPES lists all 10.
+    edges. The paper describes A3 as "the positive part of the negative
+    elements", but its A3 results (Tables 6-7) are identical to its |C|
+    results (Tables 2-3), so A3 is treated as |C| here. The literal reading,
+    edges where -C_ij > θ, leaves bond graphs almost empty above θ = 0.2.
+    config.GRAPH_TYPES lists all 8.
     """
     sign: str
     loops: bool
@@ -41,13 +43,11 @@ def adjacency_matrix(C: np.ndarray, threshold: float, graph_type: GraphType) -> 
     Weighted:   A = [T > θ] ∘ T      (keep values above θ, zero the rest)
     Unweighted: A = [T > θ]          (1 above θ, 0 otherwise)
 
-    where T is C, -C or |C| according to graph_type.sign, with the diagonal
-    set to 0 unless graph_type.loops.
+    where T is C or |C| according to graph_type.sign, with the diagonal set
+    to 0 unless graph_type.loops.
     """
     if graph_type.sign == "positive":
         T = C.copy()
-    elif graph_type.sign == "negative":
-        T = -C
     elif graph_type.sign == "absolute":
         T = np.abs(C)
     else:

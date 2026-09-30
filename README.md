@@ -39,7 +39,7 @@ The pipeline runs top to bottom in this order:
 | 0 | [thesis/data.py](thesis/data.py) | Rebuilds `train.csv` / `test.csv` from the raw Datastream downloads (`build_train_test`) | — |
 | 1 | [thesis/data.py](thesis/data.py) | Loads prices, removes 200 unusable series (duplicates, cash, broken or stale data) | — |
 | 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from 125-day rolling windows; optional Ledoit–Wolf shrinkage | 3.1 |
-| 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (10 graph types, threshold θ) | 3.2–3.3 |
+| 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (8 graph types, threshold θ) | 3.2–3.3 |
 | 4 | [thesis/centrality.py](thesis/centrality.py) | Degree, Katz, Katz-min, exponential, their subgraph versions, NBTW (resolvent and exponential), betweenness | 2.1, 3.4 |
 | 5 | [thesis/backtest.py](thesis/backtest.py) | Holds the chosen bonds for a year, produces daily portfolio returns | 2.2, 4 |
 | | [thesis/metrics.py](thesis/metrics.py) | Sharpe, Sortino, drawdown, VaR, … — one function per metric | 2.3 |
@@ -82,13 +82,13 @@ Constant and duplicate series were *not* removed at this stage; step 1
 |---|---|
 | Window weighting | uniform, paper (older windows weigh more, as printed), recent |
 | Shrinkage | no, yes |
-| Graph type | sign (positive / negative / absolute) × loops × weighted = 10 |
+| Graph type | sign (positive / absolute) × loops × weighted = 8 |
 | Threshold θ | 0.0, 0.1, …, 0.9 |
 | Centrality | 59 variants (measure × parameter), plus 20 NBTW exponential variants on unweighted graphs |
 | Selection | central, peripheral |
 | Portfolio size m | 5, 10, 15, 20, 25, 30, 40, 50, 75, 100 |
 
-In total 828,000 strategies, evaluated walk-forward: the correlations of
+In total 662,400 strategies, evaluated walk-forward: the correlations of
 year *y* choose the bonds held in year *y + 1*, with equal weights.
 
 ## Differences from the paper
@@ -98,7 +98,11 @@ year *y* choose the bonds held in year *y + 1*, with equal weights.
   markets.
 - **Held-out test set** (2024–2025), untouched while choosing strategies.
 - **Graph types**: the paper's 4 transforms × 8 adjacency options reduce to
-  10 distinct graphs, because every θ ≥ 0.
+  8 distinct graphs, because every θ ≥ 0. The paper describes transform A3
+  as "the positive part of the negative elements", but its A3 results
+  (Tables 6–7) are identical to its |C| results (Tables 2–3), so A3 is
+  treated as |C|. Read literally, A3 would connect only negatively
+  correlated bonds; on bond data that graph is almost empty above θ = 0.2.
 - **Ties** between equally central bonds (e.g. isolated nodes) are broken
   randomly with a fixed seed, not by column order.
 - **Window weighting** is a parameter, because the printed formula gives older
