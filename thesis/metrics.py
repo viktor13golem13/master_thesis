@@ -15,7 +15,10 @@ Omega, Sortino and Upside Potential ratios.
 """
 import numpy as np
 
-TRADING_DAYS_PER_YEAR = 252
+# Days per year used to annualise daily figures. The usual convention is 252
+# trading days, but the Datastream files have a price for every weekday
+# (holidays repeat the previous price): 260-262 days a year, 261 on average.
+TRADING_DAYS_PER_YEAR = 261
 VAR_LEVEL = 0.05        # tail probability for Value at Risk and CVaR
 
 

@@ -13,15 +13,15 @@ def test_cumulative_return():
 
 
 def test_expected_return():
-    assert np.isclose(metrics.expected_return(RP, RF), 0.006 * 252)
+    assert np.isclose(metrics.expected_return(RP, RF), 0.006 * metrics.TRADING_DAYS_PER_YEAR)
 
 
 def test_volatility():
-    assert np.isclose(metrics.volatility(RP, RF), np.std(RP, ddof=1) * np.sqrt(252))
+    assert np.isclose(metrics.volatility(RP, RF), np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
 
 
 def test_sharpe_ratio():
-    assert np.isclose(metrics.sharpe_ratio(RP, RF), (0.006 - 0.001) / np.std(RP, ddof=1) * np.sqrt(252))
+    assert np.isclose(metrics.sharpe_ratio(RP, RF), (0.006 - 0.001) / np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
 
 
 def test_sharpe_ratio_of_constant_returns_is_undefined():

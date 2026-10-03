@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from thesis import config
-from thesis.backtest import evaluate_portfolios, select_bonds, split_by_year
+from thesis.backtest import evaluate_portfolio, select_bonds, split_by_year
 from thesis.centrality import rank_by_centrality
 from thesis.correlation import correlation_for_year
 from thesis.graph import Graph, GraphType, adjacency_matrix
@@ -62,21 +62,19 @@ class SearchData:
 
 # ------------------------------------------------------ one graph configuration
 
-def pick_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float]:
+def rank_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float]:
     """
-    For every centrality, selection and formation year: the bonds a strategy
-    would buy, in order of preference (enough for the largest portfolio).
+    For every centrality and formation year: all bonds, most central first.
 
     Returns
     -------
-    picks : dict
-        (centrality name, parameter, selection) -> {formation year: bond indices}
+    rankings : dict
+        (centrality name, parameter) -> {formation year: bond indices, most central first}
     isolated_fraction : float
         Average share of bonds with no edges, a warning sign that the ranking
         is mostly random tie-breaking.
     """
-    max_size = max(config.PORTFOLIO_SIZES)
-    picks = {}
+    rankings = {}
     isolated = []
     for year in data.formation_years:
         C = data.correlations[(graph_config.weighting, graph_config.shrink, year)]
@@ -89,16 +87,14 @@ def pick_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float
             scores = centrality(graph, parameter)
             if scores is None:          # measure not defined for this kind of graph
                 continue
-            ranking = rank_by_centrality(scores, rng)
-            for selection in config.SELECTIONS:
-                key = (centrality.__name__, parameter, selection)
-                picks.setdefault(key, {})[year] = select_bonds(ranking, selection, max_size)
-    return picks, float(np.mean(isolated))
+            key = (centrality.__name__, parameter)
+            rankings.setdefault(key, {})[year] = rank_by_centrality(scores, rng)
+    return rankings, float(np.mean(isolated))
 
 
 def evaluate_graph_config(graph_config: GraphConfig, data: SearchData) -> list[dict]:
     """One results row per (centrality, selection, portfolio size) on this graph configuration."""
-    picks, isolated_fraction = pick_bonds(graph_config, data)
+    rankings, isolated_fraction = rank_bonds(graph_config, data)
     settings = {
         "weighting": graph_config.weighting,
         "shrink": graph_config.shrink,
@@ -109,11 +105,15 @@ def evaluate_graph_config(graph_config: GraphConfig, data: SearchData) -> list[d
         "isolated_frac": isolated_fraction,
     }
     rows = []
-    for (centrality, parameter, selection), picks_by_year in picks.items():
-        scores = evaluate_portfolios(data.returns_by_year, data.rf_by_year, picks_by_year, config.PORTFOLIO_SIZES)
-        for size, metrics in zip(config.PORTFOLIO_SIZES, scores):
-            rows.append({**settings, "centrality": centrality, "alpha": parameter,
-                         "selection": selection, "m": size, **metrics})
+    for (centrality, parameter), ranking_by_year in rankings.items():
+        for selection in config.SELECTIONS:
+            for m in config.PORTFOLIO_SIZES:
+                # chosen with the data of formation year y, held during year y + 1
+                holdings = {year + 1: select_bonds(ranking, selection, m)
+                            for year, ranking in ranking_by_year.items()}
+                metrics = evaluate_portfolio(data.returns_by_year, data.rf_by_year, holdings)
+                rows.append({**settings, "centrality": centrality, "alpha": parameter,
+                             "selection": selection, "m": m, **metrics})
     return rows
 
 
