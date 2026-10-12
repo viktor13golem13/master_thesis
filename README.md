@@ -52,6 +52,8 @@ Supporting files:
   that ranks strategies (`RANK_BY`).
 - [thesis/parallel.py](thesis/parallel.py) — runs the grid search on all CPU cores.
 - [thesis/plotting.py](thesis/plotting.py) — draws a graph, for figures.
+- [thesis/random_baseline.py](thesis/random_baseline.py) and [random_baseline.py](random_baseline.py) — 10,000
+  random portfolios per size m, walked forward like the graph strategies: what luck alone achieves.
 - [thesis/miqp.py](thesis/miqp.py) and [miqp_baseline.py](miqp_baseline.py) — the MIQP baseline from the
   literature study: the m bonds with the lowest equal-weight variance, chosen by
   mixed-integer optimisation with Gurobi. Run `.venv/bin/python miqp_baseline.py`; it needs a

@@ -104,3 +104,8 @@ MIQP_OBJECTIVES = ("min_variance", "min_variance_target_return")
 MIQP_WEIGHTINGS = ("equal", "optimised")   # exactly m bonds at 1/m (MIQP), or free weights up to 1/m (QP)
 MIQP_TIME_LIMIT = 300                  # seconds per problem; the best portfolio found is used
 MIQP_RESULTS_PATH = "results_miqp.parquet"
+
+# ------------------------------------------------- 8. random-portfolio baseline
+RANDOM_PORTFOLIOS = 10_000            # random portfolios per portfolio size m
+RANDOM_SEED = 2026                    # fixed, so the draws are reproducible
+RANDOM_RESULTS_PATH = "results_random.parquet"
