@@ -52,6 +52,11 @@ Supporting files:
   that ranks strategies (`RANK_BY`).
 - [thesis/parallel.py](thesis/parallel.py) — runs the grid search on all CPU cores.
 - [thesis/plotting.py](thesis/plotting.py) — draws a graph, for figures.
+- [thesis/miqp.py](thesis/miqp.py) and [miqp_baseline.py](miqp_baseline.py) — the MIQP baseline from the
+  literature study: the m bonds with the lowest equal-weight variance, chosen by
+  mixed-integer optimisation with Gurobi. Run `.venv/bin/python miqp_baseline.py`; it needs a
+  Gurobi licence (students get a free named-user academic licence at gurobi.com,
+  activated with `grbgetkey` from the university network or VPN).
 - [tests/](tests/) — checks the code against the paper (e.g. its toy example in
   Figure 2) and against brute-force computations.
 

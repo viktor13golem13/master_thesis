@@ -23,3 +23,10 @@ def test_portfolio_returns_average_the_holdings_of_each_year():
         (-0.01 + 0.05) / 2,     # 2019: bonds 1 and 0
     ])
     assert np.allclose(daily, expected)
+
+
+def test_weighted_portfolio_returns():
+    from thesis.backtest import weighted_portfolio_returns
+    returns_by_year = {2018: np.array([[0.01, 0.02, 0.03], [0.00, 0.04, -0.02]])}
+    weights_by_year = {2018: np.array([0.5, 0.0, 0.5])}
+    assert np.allclose(weighted_portfolio_returns(returns_by_year, weights_by_year), [0.02, -0.01])

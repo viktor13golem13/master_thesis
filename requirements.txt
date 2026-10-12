@@ -6,3 +6,4 @@ matplotlib>=3.6
 igraph>=0.11
 pyarrow>=14
 pytest>=8
+gurobipy>=12

@@ -51,6 +51,25 @@ def evaluate_portfolio(
     return all_metrics(daily, rf)
 
 
+def weighted_portfolio_returns(returns_by_year: dict[int, np.ndarray], weights_by_year: dict[int, np.ndarray]) -> np.ndarray:
+    """
+    Daily returns of a portfolio with fixed weights, rebalanced daily (r_p = xᵀr).
+    weights_by_year[y] has one weight per bond, summing to 1, held during year y.
+    """
+    return np.concatenate([returns_by_year[year] @ weights for year, weights in sorted(weights_by_year.items())])
+
+
+def evaluate_weighted_portfolio(
+    returns_by_year: dict[int, np.ndarray],
+    rf_by_year: dict[int, np.ndarray],
+    weights_by_year: dict[int, np.ndarray],
+) -> dict[str, float]:
+    """All metrics for one portfolio with fixed weights, like evaluate_portfolio."""
+    daily = weighted_portfolio_returns(returns_by_year, weights_by_year)
+    rf = np.concatenate([rf_by_year[year] for year in sorted(weights_by_year)])
+    return all_metrics(daily, rf)
+
+
 def equal_weight_benchmark(
     returns_by_year: dict[int, np.ndarray],
     rf_by_year: dict[int, np.ndarray],
