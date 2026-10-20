@@ -121,8 +121,7 @@ def run_grid_search(
 
 def compute_correlations(returns, graph_configs, formation_years, processes=None) -> dict:
     """Every yearly correlation matrix the graph configurations need, computed in parallel."""
-    keys = sorted({(g.weighting, g.shrink) for g in graph_configs})
-    tasks = [(weighting, shrink, year) for weighting, shrink in keys for year in formation_years]
+    tasks = {(g.weighting, g.shrink, year) for g in graph_configs for year in formation_years}
     return dict(parallel_map(_correlation_task, tasks, returns, processes))
 
 
