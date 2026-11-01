@@ -73,7 +73,7 @@ GRAPH_TYPES = [
 
 # ------------------------------------------------------------ 4. centrality
 KATZ_FRACTIONS = tuple(k / 10 for k in range(1, 10))      # α = f / ρ(A)   (paper, Sec. 3.4)
-NBTW_FRACTIONS = tuple(k / 10 for k in range(1, 10))      # α = f · μ
+NBTW_FRACTIONS = tuple(k / 10 for k in range(1, 10))      # α = f / ρ(A)  (the paper: f · μ)
 EXPONENTIAL_BETAS = tuple(k / 10 for k in range(1, 11))   # β in e^{βA}, maximum 1
 
 # Every (centrality function, parameter) pair tried on each graph.

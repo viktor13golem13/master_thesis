@@ -6,7 +6,7 @@ from scipy.linalg import expm
 
 from thesis.centrality import (
     degree, exponential, exponential_subgraph, katz, katz_min, katz_subgraph,
-    nbtw_exponential, nbtw_exponential_subgraph, nbtw_matrix, nbtw_radius, rank_by_centrality,
+    nbtw, nbtw_exponential, nbtw_exponential_subgraph, nbtw_matrix, rank_by_centrality,
 )
 from thesis.graph import Graph
 
@@ -84,23 +84,21 @@ def count_nonbacktracking_walks(A, alpha, max_length):
 @pytest.mark.parametrize("loops", [False, True])
 def test_nbtw_inverse_counts_nonbacktracking_walks(loops):
     A = random_weighted_graph(7, seed=6, loops=loops)
-    alpha = 0.3 * nbtw_radius(A)
+    alpha = 0.3 / np.max(np.abs(np.linalg.eigvalsh(A)))
     counted = count_nonbacktracking_walks(A, alpha, 60)
     assert np.allclose(np.linalg.inv(nbtw_matrix(A, alpha)), counted, atol=1e-10)
 
 
 @pytest.mark.parametrize("loops", [False, True])
-def test_nbtw_radius_is_inverse_spectral_radius_of_edge_matrix(loops):
-    A = random_weighted_graph(8, seed=7, loops=loops)
-    arcs = [(u, v) for u in range(8) for v in range(8) if A[u, v] > 0]
-    index = {arc: k for k, arc in enumerate(arcs)}
-    B = np.zeros((len(arcs), len(arcs)))
-    for (u, v) in arcs:
-        for w in range(8):
-            if A[v, w] > 0 and w != u:
-                B[index[(u, v)], index[(v, w)]] = A[v, w]
-    expected = 1 / np.max(np.abs(np.linalg.eigvals(B)))
-    assert np.isclose(nbtw_radius(A), min(expected, 1 / A.max()), rtol=1e-3)
+@pytest.mark.parametrize("seed", range(5))
+def test_nbtw_is_defined_up_to_one_over_rho(loops, seed):
+    # α = 0.99 / ρ(A) must still give a positive definite Ψ (Cholesky succeeds)
+    # and an inverse without negative entries, as a count of walks must be.
+    A = random_weighted_graph(15, seed=seed, loops=loops, density=0.8)
+    alpha = 0.99 / np.max(np.abs(np.linalg.eigvalsh(A)))
+    np.linalg.cholesky(nbtw_matrix(A, alpha))
+    assert np.all(np.linalg.inv(nbtw_matrix(A, alpha)) > -1e-12)
+    assert np.all(np.isfinite(nbtw(Graph(A, weighted=True), 0.99)))
 
 
 # ---------------------------------------------------------------- ranking

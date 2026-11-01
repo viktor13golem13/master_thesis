@@ -120,6 +120,8 @@ year *y* choose the bonds held in year *y + 1*, with equal weights.
   Thm 4.6) works on an m × m edge matrix, with m up to ~550,000 directed
   edges here, which is not feasible. Unweighted graphs use the 2n × 2n
   formula of Arrigo, Grindrod, Higham & Noferini (2018, Thm 2.1).
+- **NBTW's α** is a fraction of 1/ρ(A), as for Katz, instead of a fraction of the NBTW
+  convergence radius μ (which needs a numerical search); every such α is valid because μ > 1/ρ(A).
 - **Benchmark**: the Vanguard Total Bond Market ETF instead of the S&P 500
   index, plus the equal-weight portfolio of all bonds. The Vanguard series
   is a price series (it excludes coupons), so it understates the ETF's
