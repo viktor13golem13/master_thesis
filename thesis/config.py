@@ -8,7 +8,7 @@ from thesis.centrality import (
     katz_subgraph, nbtw, nbtw_exponential, nbtw_exponential_subgraph, nbtw_subgraph,
 )
 from thesis.graph import GraphType
-from thesis.metrics import sharpe_ratio
+from thesis.metrics import sharpe_ratio_lo
 
 # --------------------------------------------------------------------- files
 TRAIN_PATH = "dataset/train.csv"
@@ -97,7 +97,7 @@ SELECTIONS = ("central", "peripheral")
 
 # ---------------------------------------------------------- 6. grid search
 # Metric used to sort the results; any function from thesis.metrics.METRICS.
-RANK_BY = sharpe_ratio
+RANK_BY = sharpe_ratio_lo                # Lo (2002): Sharpe ratio corrected for autocorrelation
 
 # -------------------------------------------------------- 7. MIQP baseline
 MIQP_OBJECTIVES = ("min_variance", "min_variance_target_return")

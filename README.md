@@ -38,7 +38,7 @@ The pipeline runs top to bottom in this order:
 |---|---|---|---|
 | 0 | [thesis/data.py](thesis/data.py) | Rebuilds `train.csv` / `test.csv` from the raw Datastream downloads (`build_train_test`) | — |
 | 1 | [thesis/data.py](thesis/data.py) | Loads prices, removes 200 unusable series (duplicates, cash, broken or stale data) | — |
-| 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from 125-day rolling windows; optional Ledoit–Wolf shrinkage | 3.1 |
+| 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from all 125-day rolling windows in the year; optional Ledoit–Wolf shrinkage | 3.1 |
 | 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (8 graph types, threshold θ) | 3.2–3.3 |
 | 4 | [thesis/centrality.py](thesis/centrality.py) | Degree, Katz, Katz-min, exponential, their subgraph versions, NBTW (resolvent and exponential), betweenness | 2.1, 3.4 |
 | 5 | [thesis/backtest.py](thesis/backtest.py) | Holds the chosen bonds for a year, produces daily portfolio returns | 2.2, 4 |
@@ -111,7 +111,18 @@ year *y* choose the bonds held in year *y + 1*, with equal weights.
   treated as |C|. Read literally, A3 would connect only negatively
   correlated bonds; on bond data that graph is almost empty above θ = 0.2.
 - **Ties** between equally central bonds (e.g. isolated nodes) are broken
-  randomly with a fixed seed, not by column order.
+  randomly with a fixed seed, not by column order. Exponential-type scores
+  on sparse graphs can be tied for many weakly connected nodes, so
+  "peripheral" may then be a random choice among them. The paper has the
+  same issue; it is treated as a weakness of those centralities, not corrected.
+- **Correlation windows**: every 125-day window that fits in the year
+  (about 137) is averaged, not only the last 125.
+- **Volatility**: daily bond-index returns are autocorrelated, so the
+  daily SD understates risk. Besides the paper's daily SD and Sharpe ratio,
+  every strategy also gets a Lo (2002) version (SD_Lo / SR_Lo: q = 261,
+  autocorrelations beyond lag 20 taken as zero), a monthly-block and a
+  yearly-block version (SD_M / SR_M, SD_Y / SR_Y). Strategies are ranked by
+  SR_Lo; `choose_volatility.py` shows why (training years only).
 - **Window weighting** is a parameter, because the printed formula gives older
   windows more weight, the opposite of Pozzi et al. (2013).
 - **Portfolio sizes**: 10 values of *m* instead of *m* = 10.

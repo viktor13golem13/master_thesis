@@ -8,9 +8,9 @@ def test_single_window_matches_numpy():
     assert np.allclose(yearly_correlation(X, window_length=125), np.corrcoef(X.T))
 
 
-def test_uniform_weighting_averages_the_last_125_windows():
+def test_uniform_weighting_averages_every_window():
     X = np.random.default_rng(1).normal(size=(260, 5))
-    expected = np.mean([np.corrcoef(X[end - 125:end].T) for end in range(136, 261)], axis=0)
+    expected = np.mean([np.corrcoef(X[end - 125:end].T) for end in range(125, 261)], axis=0)
     assert np.allclose(yearly_correlation(X, window_length=125, weighting="uniform"), expected)
 
 

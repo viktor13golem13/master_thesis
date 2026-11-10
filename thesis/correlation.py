@@ -2,8 +2,8 @@
 Step 2 — One correlation matrix per year (paper, Sec. 3.1).
 
 For each year, Pearson correlations are computed over rolling windows of 125
-trading days; the windows ending on the last 125 days of the year are then
-averaged into a single matrix C. Optionally C is shrunk towards a simpler
+trading days; every window that fits inside the year (about 137) is then
+averaged into a single matrix C. The paper averages only the last 125. Optionally C is shrunk towards a simpler
 single-index model (Ledoit & Wolf 2003) to reduce estimation noise.
 """
 import numpy as np
@@ -69,7 +69,7 @@ def yearly_correlation(
     np.ndarray of shape (series, series) with 1 on the diagonal.
     """
     n_days, n_series = returns.shape
-    n_windows = min(window_length, n_days - window_length + 1)
+    n_windows = n_days - window_length + 1          # every window that fits in the year
     if n_windows < 1:
         raise ValueError(f"The year has {n_days} days, fewer than the window length {window_length}")
     weights = window_weights(n_windows, window_length, weighting)

@@ -21,6 +21,12 @@ import numpy as np
 TRADING_DAYS_PER_YEAR = 261
 VAR_LEVEL = 0.05        # tail probability for Value at Risk and CVaR
 
+# Daily returns of bond indices are autocorrelated (lag 1 about 0.3), so the
+# daily SD times √261 understates risk. The other volatility versions correct
+# for that. The correction stops growing at about 20 lags.
+LO_LAGS = 20             # autocorrelations beyond this lag are taken to be zero
+DAYS_PER_MONTH = 22
+
 
 # ------------------------------------------------------------ return and risk
 
@@ -39,16 +45,76 @@ def volatility(portfolio_returns, risk_free_returns) -> float:
     return float(np.std(portfolio_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR))
 
 
+def volatility_lo(portfolio_returns, risk_free_returns) -> float:
+    """
+    Annual volatility by Lo (2002) with q = 261 days (SD_Lo), taking the
+    autocorrelations ρ_k beyond LO_LAGS to be zero:
+
+        SD_Lo = SD · √(1 + 2 Σ_{k=1}^{LO_LAGS} (1 - k/q) ρ_k)
+
+    NaN if the estimated autocorrelations make the expression negative.
+    """
+    x = portfolio_returns - np.mean(portfolio_returns)
+    q = TRADING_DAYS_PER_YEAR
+    total = x @ x
+    for lag in range(1, LO_LAGS + 1):
+        total += 2 * (1 - lag / q) * (x[lag:] @ x[:-lag])
+    if total < 0:
+        return float("nan")
+    return float(np.sqrt(total / (len(x) - 1) * q))
+
+
+def volatility_monthly(portfolio_returns, risk_free_returns) -> float:
+    """SD of the returns of consecutive 22-day blocks, annualised (SD_M)."""
+    return _block_volatility(portfolio_returns, DAYS_PER_MONTH)
+
+
+def volatility_yearly(portfolio_returns, risk_free_returns) -> float:
+    """
+    SD of the returns of consecutive 261-day blocks (SD_Y). No autocorrelation
+    is left at this scale, but there are few blocks: 6 in training, 2 in test.
+    """
+    return _block_volatility(portfolio_returns, TRADING_DAYS_PER_YEAR)
+
+
+def _block_volatility(portfolio_returns, days: int) -> float:
+    """SD of compounded returns over consecutive blocks of `days` days, annualised; leftover days are dropped."""
+    n_blocks = len(portfolio_returns) // days
+    if n_blocks < 2:
+        return float("nan")
+    blocks = portfolio_returns[:n_blocks * days].reshape(n_blocks, days)
+    block_returns = np.prod(1.0 + blocks, axis=1) - 1.0
+    return float(np.std(block_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR / days))
+
+
 def sharpe_ratio(portfolio_returns, risk_free_returns) -> float:
     """
     Excess return per unit of risk, annualised (SR):
     (E[r_p] - E[r_f]) / sd(r_p).
     """
-    sd = np.std(portfolio_returns, ddof=1)
-    if sd == 0:
+    return _sharpe(portfolio_returns, risk_free_returns, volatility(portfolio_returns, risk_free_returns))
+
+
+def sharpe_ratio_lo(portfolio_returns, risk_free_returns) -> float:
+    """Sharpe ratio with Lo's annual volatility (SR_Lo)."""
+    return _sharpe(portfolio_returns, risk_free_returns, volatility_lo(portfolio_returns, risk_free_returns))
+
+
+def sharpe_ratio_monthly(portfolio_returns, risk_free_returns) -> float:
+    """Sharpe ratio with the monthly-block volatility (SR_M)."""
+    return _sharpe(portfolio_returns, risk_free_returns, volatility_monthly(portfolio_returns, risk_free_returns))
+
+
+def sharpe_ratio_yearly(portfolio_returns, risk_free_returns) -> float:
+    """Sharpe ratio with the yearly-block volatility (SR_Y)."""
+    return _sharpe(portfolio_returns, risk_free_returns, volatility_yearly(portfolio_returns, risk_free_returns))
+
+
+def _sharpe(portfolio_returns, risk_free_returns, sd: float) -> float:
+    """Annualised mean excess return over an annualised volatility; NaN if sd is 0 or NaN."""
+    if not sd > 0:
         return float("nan")
-    excess = np.mean(portfolio_returns - risk_free_returns)
-    return float(excess / sd * np.sqrt(TRADING_DAYS_PER_YEAR))
+    return float(np.mean(portfolio_returns - risk_free_returns) * TRADING_DAYS_PER_YEAR / sd)
 
 
 # ---------------------------------------------------------------- tail risk
@@ -112,6 +178,12 @@ METRICS = {
     "ER": expected_return,
     "SD": volatility,
     "SR": sharpe_ratio,
+    "SD_Lo": volatility_lo,
+    "SR_Lo": sharpe_ratio_lo,
+    "SD_M": volatility_monthly,
+    "SR_M": sharpe_ratio_monthly,
+    "SD_Y": volatility_yearly,
+    "SR_Y": sharpe_ratio_yearly,
     "VaR": value_at_risk,
     "CVaR": conditional_value_at_risk,
     "MaxDD": max_drawdown,
@@ -122,7 +194,7 @@ METRICS = {
 
 
 # Metrics where a smaller value is better (all others: larger is better).
-LOWER_IS_BETTER = {"SD", "MaxDD"}
+LOWER_IS_BETTER = {"SD", "SD_Lo", "SD_M", "SD_Y", "MaxDD"}
 
 
 def metric_name(metric) -> str:
