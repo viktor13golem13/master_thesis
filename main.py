@@ -21,8 +21,8 @@ from thesis.data import daily_returns, load_dataset  # noqa: E402
 from thesis.grid_search import run_grid_search  # noqa: E402
 from thesis.metrics import all_metrics  # noqa: E402
 
-SHOWN_COLUMNS = ["weighting", "shrink", "sign", "loops", "weighted", "threshold",
-                 "centrality", "alpha", "selection", "m", "ER", "SD", "SR", "MaxDD", "Sortino"]
+SHOWN_COLUMNS = ["matrix", "weighting", "shrink", "sign", "loops", "weighted", "threshold",
+                 "centrality", "alpha", "selection", "m", "ER", "SD_Lo", "SR_Lo", "SR", "MaxDD"]
 
 
 def main():

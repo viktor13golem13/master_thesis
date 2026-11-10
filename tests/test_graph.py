@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from thesis.config import GRAPH_TYPES
-from thesis.graph import GraphType, adjacency_matrix
+from thesis.correlation import covariance_from_correlation
+from thesis.graph import GraphType, adjacency_matrix, matched_threshold
 
 from tests.helpers import C_TOY
 
@@ -28,3 +29,18 @@ def test_weighted_graphs_keep_the_correlation_on_each_edge(graph_type):
 
 def test_there_are_eight_distinct_graph_types():
     assert len(GRAPH_TYPES) == len(set(GRAPH_TYPES)) == 8
+
+
+@pytest.mark.parametrize("sign", ["positive", "absolute"])
+@pytest.mark.parametrize("threshold", [0.0, 0.3, 0.8])
+def test_matched_threshold_gives_the_same_number_of_edges(sign, threshold):
+    rng = np.random.default_rng(7)
+    X = rng.normal(size=(200, 20)) @ rng.normal(size=(20, 20)) * rng.random(20)
+    C = np.corrcoef(X.T)
+    C = (C + C.T) / 2                     # np.corrcoef is symmetric only up to rounding; the pipeline's C is exact
+    M = covariance_from_correlation(C, X.std(axis=0, ddof=1))
+    graph_type = GraphType(sign, loops=False, weighted=True)
+    n_edges = (adjacency_matrix(C, threshold, graph_type) > 0).sum()
+    A = adjacency_matrix(M, matched_threshold(M, C, threshold, graph_type), graph_type)
+    assert (A > 0).sum() == n_edges
+    assert (A >= 0).all()

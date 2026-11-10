@@ -1,6 +1,8 @@
 import numpy as np
 
-from thesis.correlation import single_index_shrinkage, window_weights, yearly_correlation
+from thesis.correlation import (
+    covariance_from_correlation, single_index_shrinkage, window_weights, yearly_correlation,
+)
 
 
 def test_single_window_matches_numpy():
@@ -59,3 +61,12 @@ def test_shrinkage_matches_ledoit_wolf_formulas():
     assert 0 < shrinkage < 1
     assert np.isclose(shrinkage, ledoit_wolf_reference(x))
     assert np.allclose(np.diag(target), 1)
+
+
+def test_covariance_from_correlation_is_covariance_over_largest_variance():
+    X = np.random.default_rng(4).normal(size=(200, 5)) * np.array([1, 2, 3, 4, 5])
+    sd = X.std(axis=0, ddof=1)
+    scaled = covariance_from_correlation(np.corrcoef(X.T), sd)
+    assert np.allclose(scaled, np.cov(X.T) / sd.max() ** 2)
+    assert np.abs(scaled).max() <= 1 + 1e-12
+    assert np.isclose(scaled[4, 4], 1.0)

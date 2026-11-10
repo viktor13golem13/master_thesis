@@ -60,6 +60,11 @@ WINDOW_WEIGHTINGS = ("uniform", "paper", "recent")   # see correlation.window_we
 SHRINKAGE_OPTIONS = (False, True)                    # Ledoit-Wolf shrinkage (paper, Sec. 3.1)
 
 # ----------------------------------------------------------------- 3. graph
+# The matrix the graph is built from: the paper's correlations, or covariances
+# divided by the largest variance (correlation.covariance_from_correlation).
+# A covariance graph keeps as many edges as the correlation graph at the same
+# θ (graph.matched_threshold), so in its rows θ stands for that density.
+GRAPH_MATRICES = ("correlation", "covariance")
 THRESHOLDS = tuple(k / 10 for k in range(10))        # θ = 0.0, 0.1, ..., 0.9 (paper, Sec. 3.3)
 
 # The paper's 4 transforms x 8 adjacency options give only these 8 distinct

@@ -14,6 +14,7 @@ The pipeline, in order:
     grid_search.py  6. repeat for every combination of settings
 
     config.py       every setting of the experiment
+    simple_rules.py ranks bonds without a graph (a baseline for step 6)
     parallel.py     runs step 6 on all CPU cores
     plotting.py     draws a graph (for figures only)
 """

@@ -39,7 +39,7 @@ The pipeline runs top to bottom in this order:
 | 0 | [thesis/data.py](thesis/data.py) | Rebuilds `train.csv` / `test.csv` from the raw Datastream downloads (`build_train_test`) | — |
 | 1 | [thesis/data.py](thesis/data.py) | Loads prices, removes 200 unusable series (duplicates, cash, broken or stale data) | — |
 | 2 | [thesis/correlation.py](thesis/correlation.py) | One correlation matrix per year from all 125-day rolling windows in the year; optional Ledoit–Wolf shrinkage | 3.1 |
-| 3 | [thesis/graph.py](thesis/graph.py) | Correlation matrix → adjacency matrix (8 graph types, threshold θ) | 3.2–3.3 |
+| 3 | [thesis/graph.py](thesis/graph.py) | Correlation (or covariance) matrix → adjacency matrix (8 graph types, threshold θ) | 3.2–3.3 |
 | 4 | [thesis/centrality.py](thesis/centrality.py) | Degree, Katz, Katz-min, exponential, their subgraph versions, NBTW (resolvent and exponential), betweenness | 2.1, 3.4 |
 | 5 | [thesis/backtest.py](thesis/backtest.py) | Holds the chosen bonds for a year, produces daily portfolio returns | 2.2, 4 |
 | | [thesis/metrics.py](thesis/metrics.py) | Sharpe, Sortino, drawdown, VaR, … — one function per metric | 2.3 |
@@ -51,6 +51,8 @@ Supporting files:
   rules, thresholds, centrality parameters, portfolio sizes, and the metric
   that ranks strategies (`RANK_BY`).
 - [thesis/parallel.py](thesis/parallel.py) — runs the grid search on all CPU cores.
+- [thesis/simple_rules.py](thesis/simple_rules.py) — ranks bonds without a graph (average correlation,
+  average covariance, volatility), evaluated alongside the grid: does the graph add anything?
 - [thesis/plotting.py](thesis/plotting.py) — draws a graph, for figures.
 - [thesis/random_baseline.py](thesis/random_baseline.py) and [random_baseline.py](random_baseline.py) — 10,000
   random portfolios per size m, walked forward like the graph strategies: what luck alone achieves.
@@ -87,6 +89,7 @@ Constant and duplicate series were *not* removed at this stage; step 1
 
 | Setting | Values |
 |---|---|
+| Matrix | correlation (paper), covariance divided by the largest variance |
 | Window weighting | uniform, paper (older windows weigh more, as printed), recent |
 | Shrinkage | no, yes |
 | Graph type | sign (positive / absolute) × loops × weighted = 8 |
@@ -95,8 +98,9 @@ Constant and duplicate series were *not* removed at this stage; step 1
 | Selection | central, peripheral |
 | Portfolio size m | 5, 10, 15, 20, 25, 30, 40, 50, 75, 100 |
 
-In total 662,400 strategies, evaluated walk-forward: the correlations of
-year *y* choose the bonds held in year *y + 1*, with equal weights.
+In total 1,324,800 graph strategies, plus 260 from the simple rules,
+evaluated walk-forward: the correlations of year *y* choose the bonds held
+in year *y + 1*, with equal weights.
 
 ## Differences from the paper
 
@@ -123,6 +127,16 @@ year *y* choose the bonds held in year *y + 1*, with equal weights.
   autocorrelations beyond lag 20 taken as zero), a monthly-block and a
   yearly-block version (SD_M / SR_M, SD_Y / SR_Y). Strategies are ranked by
   SR_Lo; `choose_volatility.py` shows why (training years only).
+- **Covariance graphs** in addition to correlation graphs. Weighted degree in
+  a covariance graph is proportional to a bond's contribution to the variance
+  of the equal-weight portfolio, which links the graph to minimum variance.
+  The covariance matrix is divided by the largest variance (entries stay in
+  [−1, 1]), but covariances are so much smaller than correlations that a
+  fixed θ ≥ 0.1 leaves the graph almost empty. A covariance graph therefore
+  keeps as many edges as the correlation graph at the same θ, the strongest
+  ones, so both are compared at equal density.
+- **Simple rules without a graph** (lowest average correlation, lowest
+  contribution to equal-weight variance, lowest volatility) as a baseline.
 - **Window weighting** is a parameter, because the printed formula gives older
   windows more weight, the opposite of Pozzi et al. (2013).
 - **Portfolio sizes**: 10 values of *m* instead of *m* = 10.

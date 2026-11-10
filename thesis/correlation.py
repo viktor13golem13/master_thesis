@@ -5,6 +5,9 @@ For each year, Pearson correlations are computed over rolling windows of 125
 trading days; every window that fits inside the year (about 137) is then
 averaged into a single matrix C. The paper averages only the last 125. Optionally C is shrunk towards a simpler
 single-index model (Ledoit & Wolf 2003) to reduce estimation noise.
+
+For the covariance graph, C is turned into a covariance matrix divided by
+the largest variance (covariance_from_correlation).
 """
 import numpy as np
 import pandas as pd
@@ -148,6 +151,20 @@ def shrink_correlation(C: np.ndarray, returns: np.ndarray) -> np.ndarray:
     return shrinkage * target + (1.0 - shrinkage) * C
 
 
+# ------------------------------------------------------------------ covariance
+
+def covariance_from_correlation(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
+    """
+    The covariance matrix divided by the largest variance: C_ij σ_i σ_j / max_k σ_k².
+
+    Every entry stays in [-1, 1], because |C_ij| σ_i σ_j <= σ_i σ_j <= max σ²,
+    and the diagonal becomes σ_i² / max σ². Pairs of calm bonds get weak
+    edges, so they tend to be peripheral.
+    """
+    scaled = volatilities / volatilities.max()
+    return C * np.outer(scaled, scaled)
+
+
 # ---------------------------------------------------------------- per year
 
 def correlation_for_year(
@@ -160,3 +177,8 @@ def correlation_for_year(
     X = returns.loc[returns.index.year == year].to_numpy(dtype=float)
     C = yearly_correlation(X, weighting=weighting)
     return shrink_correlation(C, X) if shrink else C
+
+
+def volatilities_for_year(returns: pd.DataFrame, year: int) -> np.ndarray:
+    """Standard deviation of each series' daily returns in one calendar year."""
+    return returns.loc[returns.index.year == year].to_numpy(dtype=float).std(axis=0, ddof=1)

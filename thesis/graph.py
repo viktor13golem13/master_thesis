@@ -4,6 +4,10 @@ Step 3 — From a correlation matrix to a graph (paper, Sec. 3.2).
 Each bond index is a node. Two nodes are joined by an edge when their
 correlation passes the threshold θ; in a weighted graph the edge keeps the
 correlation as its weight, in an unweighted graph every edge has weight 1.
+
+The covariance graph is built the same way from the scaled covariance
+matrix, but with the threshold from matched_threshold, so that it has as
+many edges as the correlation graph at θ.
 """
 from dataclasses import dataclass
 from functools import cached_property
@@ -46,16 +50,37 @@ def adjacency_matrix(C: np.ndarray, threshold: float, graph_type: GraphType) -> 
     where T is C or |C| according to graph_type.sign, with the diagonal set
     to 0 unless graph_type.loops.
     """
-    if graph_type.sign == "positive":
-        T = C.copy()
-    elif graph_type.sign == "absolute":
-        T = np.abs(C)
-    else:
-        raise ValueError(f"Unknown sign {graph_type.sign!r}")
+    T = _signed(C, graph_type)
     if not graph_type.loops:
         np.fill_diagonal(T, 0.0)
     edges = T > threshold
     return np.where(edges, T, 0.0) if graph_type.weighted else edges.astype(float)
+
+
+def matched_threshold(M: np.ndarray, C: np.ndarray, threshold: float, graph_type: GraphType) -> float:
+    """
+    The threshold that gives the graph of M as many edges as the graph of C
+    has at `threshold` (loops not counted): the strongest entries of M are kept.
+
+    Used for the covariance graph. Covariances are much smaller than
+    correlations, so at the same θ the covariance graph would be almost empty;
+    matching the number of edges compares the two graphs at equal density.
+    Never below 0, so the graph never gets negative weights.
+    """
+    pairs = np.triu_indices_from(C, k=1)
+    n_edges = int((_signed(C, graph_type)[pairs] > threshold).sum())
+    values = np.sort(_signed(M, graph_type)[pairs])[::-1]
+    cutoff = values[n_edges] if n_edges < len(values) else -np.inf
+    return max(float(cutoff), 0.0)
+
+
+def _signed(C: np.ndarray, graph_type: GraphType) -> np.ndarray:
+    """C itself ("positive") or |C| ("absolute"), as a new array."""
+    if graph_type.sign == "positive":
+        return C.copy()
+    if graph_type.sign == "absolute":
+        return np.abs(C)
+    raise ValueError(f"Unknown sign {graph_type.sign!r}")
 
 
 class Graph:

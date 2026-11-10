@@ -3,7 +3,8 @@ Step 6 — Try every strategy (paper, Sec. 4).
 
 A strategy is one choice of every setting:
 
-    graph configuration   window weighting, shrinkage, graph type, threshold θ
+    graph configuration   matrix (correlation or covariance), window weighting,
+                          shrinkage, graph type, threshold θ
     centrality            measure and its parameter
     selection             central or peripheral bonds
     portfolio size        m
@@ -12,6 +13,9 @@ A graph configuration is the unit of work: for every formation year it
 builds one graph, ranks the bonds by each centrality, and then evaluates
 every (centrality, selection, m) strategy on that ranking. The possible
 values of each setting are listed in thesis.config.
+
+The simple rules of thesis.simple_rules (no graph) are evaluated the same
+way, as a baseline; their rows have no graph settings.
 
 run_grid_search is the entry point; the functions below it follow the order
 in which it uses them.
@@ -26,14 +30,16 @@ import pandas as pd
 from thesis import config
 from thesis.backtest import evaluate_portfolio, select_bonds, split_by_year
 from thesis.centrality import rank_by_centrality
-from thesis.correlation import correlation_for_year
-from thesis.graph import Graph, GraphType, adjacency_matrix
+from thesis import simple_rules
+from thesis.correlation import correlation_for_year, covariance_from_correlation, volatilities_for_year
+from thesis.graph import Graph, GraphType, adjacency_matrix, matched_threshold
 from thesis.metrics import LOWER_IS_BETTER, metric_name
 from thesis.parallel import parallel_map
 
 
 @dataclass(frozen=True)
 class GraphConfig:
+    matrix: str
     weighting: str
     shrink: bool
     graph_type: GraphType
@@ -47,9 +53,10 @@ class GraphConfig:
 def all_graph_configs() -> list[GraphConfig]:
     """Every combination of the graph settings in config."""
     return [
-        GraphConfig(weighting, shrink, graph_type, threshold)
-        for weighting, shrink, graph_type, threshold in itertools.product(
-            config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS, config.GRAPH_TYPES, config.THRESHOLDS,
+        GraphConfig(matrix, weighting, shrink, graph_type, threshold)
+        for matrix, weighting, shrink, graph_type, threshold in itertools.product(
+            config.GRAPH_MATRICES, config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS,
+            config.GRAPH_TYPES, config.THRESHOLDS,
         )
     ]
 
@@ -58,6 +65,7 @@ def all_graph_configs() -> list[GraphConfig]:
 class SearchData:
     """What evaluating a graph configuration needs, shared by all workers."""
     correlations: dict        # (weighting, shrink, year) -> correlation matrix
+    volatilities: dict        # formation year -> daily standard deviation of each bond
     formation_years: list[int]
     returns_by_year: dict     # holding year -> daily bond returns (days x bonds)
     rf_by_year: dict          # holding year -> daily risk-free returns
@@ -98,7 +106,8 @@ def run_grid_search(
     if verbose:
         print("Computing yearly correlation matrices...", flush=True)
     data = SearchData(
-        correlations=compute_correlations(returns, graph_configs, formation_years, processes),
+        correlations=compute_correlations(returns, formation_years, processes),
+        volatilities={year: volatilities_for_year(returns, year) for year in formation_years},
         formation_years=formation_years,
         returns_by_year=split_by_year(returns, holding_years),
         rf_by_year=split_by_year(rf_returns, holding_years),
@@ -111,6 +120,7 @@ def run_grid_search(
         rows.extend(result)
         if verbose and (done % 25 == 0 or done == len(graph_configs)):
             print(f"  {done}/{len(graph_configs)} done ({len(rows)} strategies)", flush=True)
+    rows.extend(evaluate_simple_rules(data))
 
     rank_column = metric_name(config.RANK_BY)
     best_first_ascending = rank_column in LOWER_IS_BETTER
@@ -119,9 +129,9 @@ def run_grid_search(
 
 # ------------------------------------------ step 1: correlation matrices
 
-def compute_correlations(returns, graph_configs, formation_years, processes=None) -> dict:
-    """Every yearly correlation matrix the graph configurations need, computed in parallel."""
-    tasks = {(g.weighting, g.shrink, year) for g in graph_configs for year in formation_years}
+def compute_correlations(returns, formation_years, processes=None) -> dict:
+    """Every yearly correlation matrix (each window weighting and shrinkage option), computed in parallel."""
+    tasks = list(itertools.product(config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS, formation_years))
     return dict(parallel_map(_correlation_task, tasks, returns, processes))
 
 
@@ -137,27 +147,19 @@ def evaluate_graph_config(graph_config: GraphConfig, data: SearchData) -> list[d
     rankings_per_centrality, isolated_fraction = rank_bonds(graph_config, data)
     rows = []
     for (centrality, parameter), ranking_by_year in rankings_per_centrality.items():
-        for selection in config.SELECTIONS:
-            for m in config.PORTFOLIO_SIZES:
-                holdings = {}
-                for year, ranking in ranking_by_year.items():
-                    holdings[year + 1] = select_bonds(ranking, selection, m)
-
-                metrics = evaluate_portfolio(data.returns_by_year, data.rf_by_year, holdings)
-                rows.append({
-                    "weighting": graph_config.weighting,
-                    "shrink": graph_config.shrink,
-                    "sign": graph_config.graph_type.sign,
-                    "loops": graph_config.graph_type.loops,
-                    "weighted": graph_config.graph_type.weighted,
-                    "threshold": graph_config.threshold,
-                    "isolated_frac": isolated_fraction,
-                    "centrality": centrality,
-                    "alpha": parameter,
-                    "selection": selection,
-                    "m": m,
-                    **metrics,
-                })
+        settings = {
+            "matrix": graph_config.matrix,
+            "weighting": graph_config.weighting,
+            "shrink": graph_config.shrink,
+            "sign": graph_config.graph_type.sign,
+            "loops": graph_config.graph_type.loops,
+            "weighted": graph_config.graph_type.weighted,
+            "threshold": graph_config.threshold,
+            "isolated_frac": isolated_fraction,
+            "centrality": centrality,
+            "alpha": parameter,
+        }
+        rows.extend(strategy_rows(settings, ranking_by_year, data))
     return rows
 
 
@@ -177,7 +179,12 @@ def rank_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float
     isolated = []
     for year in data.formation_years:
         C = data.correlations[(graph_config.weighting, graph_config.shrink, year)]
-        A = adjacency_matrix(C, graph_config.threshold, graph_config.graph_type)
+        if graph_config.matrix == "covariance":
+            M = covariance_from_correlation(C, data.volatilities[year])
+            A = adjacency_matrix(M, matched_threshold(M, C, graph_config.threshold, graph_config.graph_type),
+                                 graph_config.graph_type)
+        else:
+            A = adjacency_matrix(C, graph_config.threshold, graph_config.graph_type)
         graph = Graph(A, graph_config.graph_type.weighted)
         isolated.append(graph.isolated_fraction)
 
@@ -189,3 +196,40 @@ def rank_bonds(graph_config: GraphConfig, data: SearchData) -> tuple[dict, float
             key = (centrality.__name__, parameter)
             rankings.setdefault(key, {})[year] = rank_by_centrality(scores, rng)
     return rankings, float(np.mean(isolated))
+
+
+def strategy_rows(settings: dict, ranking_by_year: dict, data: SearchData) -> list[dict]:
+    """One results row per (selection, portfolio size) for one ranking of the bonds per formation year."""
+    rows = []
+    for selection in config.SELECTIONS:
+        for m in config.PORTFOLIO_SIZES:
+            holdings = {}
+            for year, ranking in ranking_by_year.items():
+                holdings[year + 1] = select_bonds(ranking, selection, m)
+
+            metrics = evaluate_portfolio(data.returns_by_year, data.rf_by_year, holdings)
+            rows.append({**settings, "selection": selection, "m": m, **metrics})
+    return rows
+
+
+# ------------------------------------- step 3: rules without a graph
+
+def evaluate_simple_rules(data: SearchData) -> list[dict]:
+    """Results rows for the rules in thesis.simple_rules, ranked like centralities."""
+    versions = [(rule, weighting, shrink)
+                for rule in simple_rules.CORRELATION_RULES
+                for weighting, shrink in itertools.product(config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS)]
+    versions.append((simple_rules.volatility, None, None))
+
+    rows = []
+    for rule, weighting, shrink in versions:
+        rng = np.random.default_rng(zlib.crc32(repr((rule.__name__, weighting, shrink)).encode()))
+        ranking_by_year = {}
+        for year in data.formation_years:
+            C = data.correlations[(weighting, shrink, year)] if weighting is not None else None
+            ranking_by_year[year] = rank_by_centrality(rule(C, data.volatilities[year]), rng)
+        settings = {"matrix": None, "weighting": weighting, "shrink": shrink, "sign": None, "loops": None,
+                    "weighted": None, "threshold": None, "isolated_frac": None,
+                    "centrality": rule.__name__, "alpha": None}
+        rows.extend(strategy_rows(settings, ranking_by_year, data))
+    return rows
