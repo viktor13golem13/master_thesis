@@ -16,6 +16,7 @@ TEST_PATH = "dataset/test.csv"
 BENCHMARK_PATH = "dataset/raw_files/vanguard.csv"   # Vanguard Total Bond Market ETF, the paper's S&P 500 analogue
 CLEANING_REPORT_PATH = "dataset/cleaning_report.csv"
 TRAIN_RESULTS_PATH = "results_train.parquet"
+STRATEGY_RETURNS_PATH = "strategy_returns_train.npy"   # daily returns of each distinct strategy portfolio
 
 # ------------------------------------------------ 0. building train and test
 # Datastream exports that share the same dates, in the order they are joined.

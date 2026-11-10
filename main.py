@@ -39,10 +39,11 @@ def main():
 
     # 2-6. Grid search
     start = time.time()
-    results = run_grid_search(returns, rf_returns, formation_years, processes=config.PROCESSES)
+    results, strategy_returns = run_grid_search(returns, rf_returns, formation_years, processes=config.PROCESSES)
     results.to_parquet(config.TRAIN_RESULTS_PATH, index=False)
-    print(f"\n{len(results)} strategies in {time.time() - start:.0f}s, "
-          f"written to {config.TRAIN_RESULTS_PATH}")
+    np.save(config.STRATEGY_RETURNS_PATH, strategy_returns)
+    print(f"\n{len(results)} strategies ({strategy_returns.shape[1]} distinct portfolios) in "
+          f"{time.time() - start:.0f}s, written to {config.TRAIN_RESULTS_PATH} and {config.STRATEGY_RETURNS_PATH}")
 
     # Benchmarks: every bond with equal weight, and the Vanguard bond ETF
     rf_by_year = split_by_year(rf_returns, holding_years)

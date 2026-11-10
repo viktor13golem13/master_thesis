@@ -17,6 +17,11 @@ values of each setting are listed in thesis.config.
 The simple rules of thesis.simple_rules (no graph) are evaluated the same
 way, as a baseline; their rows have no graph settings.
 
+Many strategies end up holding the same bonds (Katz and NBTW often agree,
+for example). The daily returns of every distinct portfolio are kept once,
+and each row's "series" column points to them; the overfitting tests
+(thesis.overfitting) need them.
+
 run_grid_search is the entry point; the functions below it follow the order
 in which it uses them.
 """
@@ -28,10 +33,10 @@ import numpy as np
 import pandas as pd
 
 from thesis import config, simple_rules
-from thesis.backtest import evaluate_weighted_portfolio, select_weights, split_by_year
+from thesis.backtest import select_weights, split_by_year, weighted_portfolio_returns
 from thesis.correlation import correlation_for_year, covariance_from_correlation, volatilities_for_year
 from thesis.graph import Graph, GraphType, adjacency_matrix, matched_threshold
-from thesis.metrics import LOWER_IS_BETTER, metric_name
+from thesis.metrics import LOWER_IS_BETTER, all_metrics, metric_name
 from thesis.parallel import parallel_map
 
 
@@ -78,7 +83,7 @@ def run_grid_search(
     graph_configs: list[GraphConfig] | None = None,
     processes: int | None = None,
     verbose: bool = True,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, np.ndarray]:
     """
     Evaluate every strategy, walking forward from each formation year to the next.
 
@@ -96,7 +101,10 @@ def run_grid_search(
 
     Returns
     -------
-    One row per strategy, best first according to config.RANK_BY.
+    results
+        One row per strategy, best first according to config.RANK_BY.
+    strategy_returns : np.ndarray of shape (days, distinct portfolios), float32
+        Daily returns of every distinct portfolio; results["series"] is the column of each row.
     """
     graph_configs = graph_configs if graph_configs is not None else all_graph_configs()
     if verbose:
@@ -106,15 +114,35 @@ def run_grid_search(
     if verbose:
         print(f"Evaluating {len(graph_configs)} graph configurations...", flush=True)
     rows = []
+    series = SeriesStore()
     for done, result in enumerate(parallel_map(evaluate_graph_config, graph_configs, data, processes), 1):
-        rows.extend(result)
+        rows.extend(series.add_rows(result))
         if verbose and (done % 25 == 0 or done == len(graph_configs)):
             print(f"  {done}/{len(graph_configs)} done ({len(rows)} strategies)", flush=True)
-    rows.extend(evaluate_simple_rules(data))
+    rows.extend(series.add_rows(evaluate_simple_rules(data)))
 
     rank_column = metric_name(config.RANK_BY)
     best_first_ascending = rank_column in LOWER_IS_BETTER
-    return pd.DataFrame(rows).sort_values(rank_column, ascending=best_first_ascending, ignore_index=True)
+    results = pd.DataFrame(rows).sort_values(rank_column, ascending=best_first_ascending, ignore_index=True)
+    return results, series.matrix()
+
+
+class SeriesStore:
+    """Keeps each distinct daily return series once and numbers them 0, 1, 2, ..."""
+
+    def __init__(self):
+        self.index = {}             # bytes of a float32 series -> its number
+
+    def add_rows(self, rows: list[dict]) -> list[dict]:
+        """Replace each row's "daily" returns by the number of that series."""
+        for row in rows:
+            key = row.pop("daily").astype(np.float32).tobytes()
+            row["series"] = self.index.setdefault(key, len(self.index))
+        return rows
+
+    def matrix(self) -> np.ndarray:
+        """All series as columns, in order of their number (dicts keep insertion order)."""
+        return np.frombuffer(b"".join(self.index), dtype=np.float32).reshape(len(self.index), -1).T
 
 
 # ------------------------------------------ step 1: correlation matrices
@@ -206,7 +234,9 @@ def strategy_rows(settings: dict, scores_by_year: dict, data: SearchData) -> lis
     """
     One results row per (selection, portfolio size) for one score per bond
     and formation year. bonds_held is the average number of bonds with a
-    weight, more than m when bonds tie for the last places.
+    weight, more than m when bonds tie for the last places. Each row also
+    carries its daily returns under "daily", which run_grid_search stores
+    separately.
     """
     rows = []
     for selection in config.SELECTIONS:
@@ -215,9 +245,11 @@ def strategy_rows(settings: dict, scores_by_year: dict, data: SearchData) -> lis
             for year, scores in scores_by_year.items():
                 weights[year + 1] = select_weights(scores, selection, m)
 
-            metrics = evaluate_weighted_portfolio(data.returns_by_year, data.rf_by_year, weights)
+            daily = weighted_portfolio_returns(data.returns_by_year, weights)
+            rf = np.concatenate([data.rf_by_year[year] for year in sorted(weights)])
             bonds_held = np.mean([np.count_nonzero(w) for w in weights.values()])
-            rows.append({**settings, "selection": selection, "m": m, "bonds_held": bonds_held, **metrics})
+            rows.append({**settings, "selection": selection, "m": m, "bonds_held": bonds_held,
+                         **all_metrics(daily, rf), "daily": daily})
     return rows
 
 

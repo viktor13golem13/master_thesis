@@ -6,6 +6,7 @@ Draw the random-portfolio baseline on the training years and save it.
 import pandas as pd
 
 from thesis import config
+from thesis.metrics import metric_name
 from thesis.data import daily_returns, load_dataset
 from thesis.random_baseline import run_random_baseline
 
@@ -19,7 +20,7 @@ def main():
     results = run_random_baseline(returns, rf_returns, formation_years)
     results.to_parquet(config.RANDOM_RESULTS_PATH, index=False)
 
-    summary = results.groupby("m").SR.describe(percentiles=[0.5, 0.9, 0.99])
+    summary = results.groupby("m")[metric_name(config.RANK_BY)].describe(percentiles=[0.5, 0.9, 0.99])
     pd.set_option("display.width", 200)
     print(summary.round(3).to_string())
     print(f"\nWritten to {config.RANDOM_RESULTS_PATH}")

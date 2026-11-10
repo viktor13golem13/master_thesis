@@ -23,12 +23,14 @@ python3 -m venv --without-pip .venv          # the system has no python3-venv
 .venv/bin/python get-pip.py                  # from https://bootstrap.pypa.io/get-pip.py
 .venv/bin/pip install -r requirements.txt
 
-.venv/bin/python main.py                     # grid search on the training years (~25 min, 16 cores)
+.venv/bin/python main.py                     # grid search on the training years (~80 min, 10 workers)
 .venv/bin/python -m pytest                   # tests (~1 s)
 ```
 
 `main.py` writes `results_train.parquet` (one row per strategy, with every
-metric) and `dataset/cleaning_report.csv` (removed series and why).
+metric), `strategy_returns_train.npy` (daily returns of each of the ~156,000
+distinct portfolios; the `series` column of a row points to its column) and
+`dataset/cleaning_report.csv` (removed series and why).
 
 ## The code
 
@@ -58,6 +60,12 @@ Supporting files:
   random portfolios per size m, walked forward like the graph strategies: what luck alone achieves.
 - [thesis/seed_check.py](thesis/seed_check.py) and [seed_check.py](seed_check.py) — reruns the best
   strategies with random tie-breaking, to show how much luck that would bring in.
+- [thesis/overfitting.py](thesis/overfitting.py) and [overfitting.py](overfitting.py) — is the best strategy
+  just the luckiest of many? Deflated Sharpe Ratio (Bailey & López de Prado 2014), Probability of
+  Backtest Overfitting (Bailey, Borwein, López de Prado & Zhu 2017) and the expected best of n
+  random portfolios. The trials are the distinct peripheral graph strategies (the paper's hypothesis,
+  fixed before seeing the bond data); all graph strategies are shown as a sensitivity check. Training
+  years only.
 - [thesis/miqp.py](thesis/miqp.py) and [miqp_baseline.py](miqp_baseline.py) — the MIQP baseline from the
   literature study: the m bonds with the lowest equal-weight variance, chosen by
   mixed-integer optimisation with Gurobi. Run `.venv/bin/python miqp_baseline.py`; it needs a
