@@ -97,10 +97,14 @@ CENTRALITIES = [
 ]
 
 # ------------------------------------------------------------- 5. backtest
-PORTFOLIO_SIZES = (5, 10, 15, 20, 25, 30, 40, 50, 75, 100)   # m, number of bonds held
+PORTFOLIO_SIZES = (10, 15, 20, 25, 30, 40, 50, 75, 100)   # m, number of bonds held (the paper: 10)
 SELECTIONS = ("central", "peripheral")
 
 # ---------------------------------------------------------- 6. grid search
+# Worker processes. Each can briefly need about 1 GB (the NBTW exponential's
+# 3n x 3n matrix exponential); 16 workers ran a 15 GB laptop out of memory.
+PROCESSES = 10
+
 # Metric used to sort the results; any function from thesis.metrics.METRICS.
 RANK_BY = sharpe_ratio_lo                # Lo (2002): Sharpe ratio corrected for autocorrelation
 
@@ -114,3 +118,8 @@ MIQP_RESULTS_PATH = "results_miqp.parquet"
 RANDOM_PORTFOLIOS = 10_000            # random portfolios per portfolio size m
 RANDOM_SEED = 2026                    # fixed, so the draws are reproducible
 RANDOM_RESULTS_PATH = "results_random.parquet"
+
+# ---------------------------------------------------------- 9. seed check
+SEED_CHECK_TOP = 100                  # the best strategies by RANK_BY are rechecked ...
+SEED_CHECK_SEEDS = 20                 # ... with this many other tie-breaking seeds
+SEED_CHECK_RESULTS_PATH = "results_seed_check.parquet"

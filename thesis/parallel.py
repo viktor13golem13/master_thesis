@@ -23,6 +23,9 @@ def parallel_map(function, items, shared, processes: int | None = None):
     Results arrive in completion order, not in the order of items.
     function must be defined at module level (so worker processes can find it).
     """
+    if processes == 1:                  # no worker processes needed, e.g. in tests
+        yield from (function(item, shared) for item in items)
+        return
     global _shared
     _shared = shared
     with mp.get_context("fork").Pool(processes) as pool:

@@ -39,7 +39,7 @@ def main():
 
     # 2-6. Grid search
     start = time.time()
-    results = run_grid_search(returns, rf_returns, formation_years)
+    results = run_grid_search(returns, rf_returns, formation_years, processes=config.PROCESSES)
     results.to_parquet(config.TRAIN_RESULTS_PATH, index=False)
     print(f"\n{len(results)} strategies in {time.time() - start:.0f}s, "
           f"written to {config.TRAIN_RESULTS_PATH}")

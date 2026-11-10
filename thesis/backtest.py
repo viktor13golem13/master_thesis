@@ -1,15 +1,17 @@
 """
 Step 5 — How would a strategy have performed? (paper, Sec. 2.2-2.3 and 4)
 
-Walk forward one year at a time: the centrality ranking computed from the
-data of formation year y selects m bonds, which are held with equal weights
-(1/m each, rebalanced daily, r_p = xᵀr) throughout year y + 1. The holding
-years are chained into one series of daily portfolio returns, which the
-metrics in thesis.metrics then score.
+Walk forward one year at a time: the centrality scores computed from the
+data of formation year y select m bonds, which are held with equal weights
+(1/m each, rebalanced daily, r_p = xᵀr) throughout year y + 1. When bonds
+tie for the last places, those places are shared by all tied bonds
+(select_weights). The holding years are chained into one series of daily
+portfolio returns, which the metrics in thesis.metrics then score.
 """
 import numpy as np
 import pandas as pd
 
+from thesis.centrality import tie_values
 from thesis.metrics import all_metrics
 
 
@@ -25,6 +27,33 @@ def select_bonds(ranking: np.ndarray, selection: str, m: int) -> np.ndarray:
     if selection == "peripheral":
         return ranking[::-1][:m]
     raise ValueError(f"Unknown selection {selection!r}")
+
+
+def select_weights(scores: np.ndarray, selection: str, m: int) -> np.ndarray:
+    """
+    Portfolio weights of the m most central ("central") or most peripheral
+    ("peripheral") bonds: 1/m each.
+
+    When several bonds tie for the last places (see centrality.tie_values),
+    e.g. many isolated nodes, those places are split evenly over all tied
+    bonds: with k bonds clearly in and t tied, each tied bond gets
+    (m - k) / (m t). This is the average portfolio over every random way of
+    breaking the tie, so the result does not depend on luck; the portfolio
+    then holds more than m bonds.
+    """
+    values = tie_values(scores)
+    if selection == "peripheral":
+        values = -values
+    elif selection != "central":
+        raise ValueError(f"Unknown selection {selection!r}")
+    boundary = np.sort(values)[::-1][m - 1]          # value of the m-th best bond
+    clearly_in = values > boundary
+    tied = values == boundary
+
+    weights = np.zeros(len(scores))
+    weights[clearly_in] = 1.0 / m
+    weights[tied] = (m - clearly_in.sum()) / (m * tied.sum())
+    return weights
 
 
 def portfolio_returns(returns_by_year: dict[int, np.ndarray], holdings_by_year: dict[int, np.ndarray]) -> np.ndarray:

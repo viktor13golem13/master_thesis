@@ -56,6 +56,8 @@ Supporting files:
 - [thesis/plotting.py](thesis/plotting.py) — draws a graph, for figures.
 - [thesis/random_baseline.py](thesis/random_baseline.py) and [random_baseline.py](random_baseline.py) — 10,000
   random portfolios per size m, walked forward like the graph strategies: what luck alone achieves.
+- [thesis/seed_check.py](thesis/seed_check.py) and [seed_check.py](seed_check.py) — reruns the best
+  strategies with random tie-breaking, to show how much luck that would bring in.
 - [thesis/miqp.py](thesis/miqp.py) and [miqp_baseline.py](miqp_baseline.py) — the MIQP baseline from the
   literature study: the m bonds with the lowest equal-weight variance, chosen by
   mixed-integer optimisation with Gurobi. Run `.venv/bin/python miqp_baseline.py`; it needs a
@@ -96,9 +98,9 @@ Constant and duplicate series were *not* removed at this stage; step 1
 | Threshold θ | 0.0, 0.1, …, 0.9 |
 | Centrality | 59 variants (measure × parameter), plus 20 NBTW exponential variants on unweighted graphs |
 | Selection | central, peripheral |
-| Portfolio size m | 5, 10, 15, 20, 25, 30, 40, 50, 75, 100 |
+| Portfolio size m | 10, 15, 20, 25, 30, 40, 50, 75, 100 |
 
-In total 1,324,800 graph strategies, plus 260 from the simple rules,
+In total 1,192,320 graph strategies, plus 234 from the simple rules,
 evaluated walk-forward: the correlations of year *y* choose the bonds held
 in year *y + 1*, with equal weights.
 
@@ -114,11 +116,15 @@ in year *y + 1*, with equal weights.
   (Tables 6–7) are identical to its |C| results (Tables 2–3), so A3 is
   treated as |C|. Read literally, A3 would connect only negatively
   correlated bonds; on bond data that graph is almost empty above θ = 0.2.
-- **Ties** between equally central bonds (e.g. isolated nodes) are broken
-  randomly with a fixed seed, not by column order. Exponential-type scores
-  on sparse graphs can be tied for many weakly connected nodes, so
-  "peripheral" may then be a random choice among them. The paper has the
-  same issue; it is treated as a weakness of those centralities, not corrected.
+- **Ties** between equally central bonds (e.g. isolated nodes) for the last
+  places of a portfolio are not broken at all: those places are shared
+  evenly by all tied bonds (`backtest.select_weights`), the average portfolio
+  over every random tie-break. With random tie-breaking, the best training
+  strategies turned out to be mostly lucky draws: rechecked with 20 other
+  seeds, the median Sharpe ratio (SR_Lo) of the top 100 fell from 0.66 to
+  −0.13 (`seed_check.py`). Even 2% isolated bonds is about 15 tied bonds,
+  so "the m most peripheral bonds" is often a choice among tied bonds; such
+  a portfolio then holds more than m bonds (column `bonds_held`).
 - **Correlation windows**: every 125-day window that fits in the year
   (about 137) is averaged, not only the last 125.
 - **Volatility**: daily bond-index returns are autocorrelated, so the
@@ -139,7 +145,7 @@ in year *y + 1*, with equal weights.
   contribution to equal-weight variance, lowest volatility) as a baseline.
 - **Window weighting** is a parameter, because the printed formula gives older
   windows more weight, the opposite of Pozzi et al. (2013).
-- **Portfolio sizes**: 10 values of *m* instead of *m* = 10.
+- **Portfolio sizes**: 9 values of *m* from 10 (the paper's only value) to 100.
 - **NBTW exponential centralities only on unweighted graphs.** For weighted
   graphs the only known formula (Arrigo, Higham, Noferini & Wood 2024,
   Thm 4.6) works on an m × m edge matrix, with m up to ~550,000 directed

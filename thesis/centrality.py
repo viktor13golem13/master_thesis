@@ -237,14 +237,20 @@ def _nbtw_exponential_by_beta(A: np.ndarray, rho: float) -> dict[int, np.ndarray
 
 # ---------------------------------------------------------------- ranking
 
-def rank_by_centrality(scores: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+def tie_values(scores: np.ndarray) -> np.ndarray:
     """
-    Node indices from most to least central.
-
-    Scores equal to 10 significant digits are ties (e.g. isolated nodes,
-    which differ only by rounding noise). Ties are ordered randomly, so the
-    column order of the data file cannot decide which bonds are picked.
+    The scores rounded so that equal values are ties: scores equal to 10
+    significant digits, relative to the largest, count as tied (e.g. isolated
+    nodes, which differ only by rounding noise).
     """
     scale = np.max(np.abs(scores))
-    rounded = np.round(scores / scale, 10) if scale > 0 else np.zeros_like(scores)
-    return np.lexsort((rng.random(len(scores)), -rounded))
+    return np.round(scores / scale, 10) if scale > 0 else np.zeros_like(scores)
+
+
+def rank_by_centrality(scores: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """
+    Node indices from most to least central, ties (see tie_values) in random
+    order. The grid search does not use this (see backtest.select_weights);
+    the seed check does, to show how much a random tie-break can change.
+    """
+    return np.lexsort((rng.random(len(scores)), -tie_values(scores)))

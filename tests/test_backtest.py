@@ -1,12 +1,27 @@
 import numpy as np
 
-from thesis.backtest import portfolio_returns, select_bonds
+from thesis.backtest import portfolio_returns, select_bonds, select_weights
 
 
 def test_select_bonds():
     ranking = np.array([4, 2, 0, 1, 3])              # most central first
     assert list(select_bonds(ranking, "central", 2)) == [4, 2]
     assert list(select_bonds(ranking, "peripheral", 2)) == [3, 1]
+
+
+def test_select_weights_without_ties_is_equal_weight_on_m_bonds():
+    scores = np.array([5.0, 1.0, 4.0, 2.0, 3.0])
+    assert np.allclose(select_weights(scores, "central", 2), [0.5, 0, 0.5, 0, 0])
+    assert np.allclose(select_weights(scores, "peripheral", 2), [0, 0.5, 0, 0.5, 0])
+
+
+def test_select_weights_shares_the_last_places_among_tied_bonds():
+    # one bond clearly peripheral, then four tied for the remaining two places
+    scores = np.array([9.0, 1.0, 1.0 + 1e-14, 1.0, 1.0, 0.5])
+    weights = select_weights(scores, "peripheral", 3)
+    assert np.isclose(weights[5], 1 / 3)
+    assert np.allclose(weights[1:5], 2 / (3 * 4))
+    assert weights[0] == 0 and np.isclose(weights.sum(), 1)
 
 
 def test_portfolio_returns_average_the_holdings_of_each_year():
