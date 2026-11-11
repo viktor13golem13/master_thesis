@@ -62,7 +62,7 @@ SHRINKAGE_OPTIONS = (False, True)                    # Ledoit-Wolf shrinkage (pa
 
 # ----------------------------------------------------------------- 3. graph
 # The matrix the graph is built from: the paper's correlations, or covariances
-# divided by the largest variance (correlation.covariance_from_correlation).
+# divided by the largest variance (correlation.correlation_for_year).
 # A covariance graph keeps as many edges as the correlation graph at the same
 # θ (graph.matched_threshold), so in its rows θ stands for that density.
 GRAPH_MATRICES = ("correlation", "covariance")

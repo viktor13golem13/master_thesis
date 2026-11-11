@@ -6,8 +6,9 @@ trading days; every window that fits inside the year (about 137) is then
 averaged into a single matrix C. The paper averages only the last 125. Optionally C is shrunk towards a simpler
 single-index model (Ledoit & Wolf 2003) to reduce estimation noise.
 
-For the covariance graph, C is turned into a covariance matrix divided by
-the largest variance (covariance_from_correlation).
+The covariance graph uses the same windows, weights and shrinkage, but
+averages the windows' covariances instead of their correlations, and divides
+the result by the largest variance (correlation_for_year with covariance=True).
 """
 import numpy as np
 import pandas as pd
@@ -51,13 +52,21 @@ def window_correlation(returns: np.ndarray) -> np.ndarray:
     return standardised.T @ standardised
 
 
+def window_covariance(returns: np.ndarray) -> np.ndarray:
+    """Sample covariance matrix of one window of daily returns (days x series)."""
+    centred = returns - returns.mean(axis=0)
+    return centred.T @ centred / (len(returns) - 1)
+
+
 def yearly_correlation(
     returns: np.ndarray,
     window_length: int = config.WINDOW_LENGTH,
     weighting: str = "uniform",
+    covariance: bool = False,
 ) -> np.ndarray:
     """
-    Weighted average of the rolling-window correlation matrices of one year.
+    Weighted average of the rolling-window correlation matrices of one year,
+    or of the covariance matrices if covariance is True.
 
     Parameters
     ----------
@@ -66,10 +75,12 @@ def yearly_correlation(
         τ, the window length in trading days.
     weighting : str
         See window_weights.
+    covariance : bool
+        Average covariance matrices instead of correlation matrices.
 
     Returns
     -------
-    np.ndarray of shape (series, series) with 1 on the diagonal.
+    np.ndarray of shape (series, series); correlations have 1 on the diagonal.
     """
     n_days, n_series = returns.shape
     n_windows = n_days - window_length + 1          # every window that fits in the year
@@ -80,8 +91,10 @@ def yearly_correlation(
 
     C = np.zeros((n_series, n_series))
     for weight, end in zip(weights, window_ends):
-        C += weight * window_correlation(returns[end - window_length:end])
-    np.fill_diagonal(C, 1.0)
+        window = returns[end - window_length:end]
+        C += weight * (window_covariance(window) if covariance else window_correlation(window))
+    if not covariance:
+        np.fill_diagonal(C, 1.0)
     return C
 
 
@@ -151,18 +164,15 @@ def shrink_correlation(C: np.ndarray, returns: np.ndarray) -> np.ndarray:
     return shrinkage * target + (1.0 - shrinkage) * C
 
 
-# ------------------------------------------------------------------ covariance
-
-def covariance_from_correlation(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
+def shrink_covariance(S: np.ndarray, returns: np.ndarray) -> np.ndarray:
     """
-    The covariance matrix divided by the largest variance: C_ij σ_i σ_j / max_k σ_k².
-
-    Every entry stays in [-1, 1], because |C_ij| σ_i σ_j <= σ_i σ_j <= max σ²,
-    and the diagonal becomes σ_i² / max σ². Pairs of calm bonds get weak
-    edges, so they tend to be peripheral.
+    Pull the covariance S towards the single-index model: δ·F + (1 - δ)·S,
+    the paper's form of the shrinkage. F is the single-index correlation
+    turned back into a covariance with the year's sample variances.
     """
-    scaled = volatilities / volatilities.max()
-    return C * np.outer(scaled, scaled)
+    shrinkage, target = single_index_shrinkage(returns)
+    sd = returns.std(axis=0)                        # ddof 0, as in single_index_shrinkage
+    return shrinkage * target * np.outer(sd, sd) + (1.0 - shrinkage) * S
 
 
 # ---------------------------------------------------------------- per year
@@ -172,11 +182,23 @@ def correlation_for_year(
     year: int,
     weighting: str = "uniform",
     shrink: bool = False,
+    covariance: bool = False,
 ) -> np.ndarray:
-    """The (optionally shrunk) yearly correlation matrix of one calendar year."""
+    """
+    The (optionally shrunk) yearly correlation matrix of one calendar year.
+
+    With covariance=True, the covariance matrix divided by its largest
+    variance instead. Every entry then stays in [-1, 1]: the matrix is
+    positive semidefinite, so |C_ij| <= √(C_ii C_jj) <= max C_kk.
+    Pairs of calm bonds get weak edges.
+    """
     X = returns.loc[returns.index.year == year].to_numpy(dtype=float)
-    C = yearly_correlation(X, weighting=weighting)
-    return shrink_correlation(C, X) if shrink else C
+    C = yearly_correlation(X, weighting=weighting, covariance=covariance)
+    if shrink:
+        C = shrink_covariance(C, X) if covariance else shrink_correlation(C, X)
+    if covariance:
+        C = C / np.diag(C).max()
+    return C
 
 
 def volatilities_for_year(returns: pd.DataFrame, year: int) -> np.ndarray:

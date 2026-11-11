@@ -9,13 +9,12 @@ Every rule has the same form:
 
     rule(C, volatilities) -> scores, one per bond
 
-where C is the yearly correlation matrix (step 2) and volatilities the
-daily standard deviations of that year. As with centralities, "central"
+where C is the yearly correlation or scaled covariance matrix (step 2, as
+listed in MATRIX_RULES) and volatilities the daily standard deviations of
+that year. As with centralities, "central"
 picks the highest scores and "peripheral" the lowest.
 """
 import numpy as np
-
-from thesis.correlation import covariance_from_correlation
 
 
 def average_correlation(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
@@ -25,11 +24,12 @@ def average_correlation(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
 
 def average_covariance(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
     """
-    Average covariance with every bond, itself included. This is proportional
+    Average covariance with every bond, itself included (C is the scaled
+    covariance matrix here). This is proportional
     to the bond's contribution to the variance of the equal-weight portfolio
     of all bonds: Σ_j Σ_ij = Cov(r_i, Σ_j r_j).
     """
-    return covariance_from_correlation(C, volatilities).mean(axis=1)
+    return C.mean(axis=1)
 
 
 def volatility(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
@@ -37,6 +37,6 @@ def volatility(C: np.ndarray, volatilities: np.ndarray) -> np.ndarray:
     return volatilities
 
 
-# Rules that depend on C get one version per window weighting and shrinkage
-# option; volatility has only one.
-CORRELATION_RULES = [average_correlation, average_covariance]
+# Rules that use a matrix, and which one; they get one version per window
+# weighting and shrinkage option. volatility has only one.
+MATRIX_RULES = {average_correlation: "correlation", average_covariance: "covariance"}

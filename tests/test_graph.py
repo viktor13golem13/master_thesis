@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 
 from thesis.config import GRAPH_TYPES
-from thesis.correlation import covariance_from_correlation
 from thesis.graph import NEGATIVE_DAMPING, GraphType, adjacency_matrix, matched_threshold
 from thesis.grid_search import all_graph_configs
 from thesis import config
@@ -58,7 +57,8 @@ def test_matched_threshold_gives_the_same_number_of_edges(sign, threshold):
     X = rng.normal(size=(200, 20)) @ rng.normal(size=(20, 20)) * rng.random(20)
     C = np.corrcoef(X.T)
     C = (C + C.T) / 2                     # np.corrcoef is symmetric only up to rounding; the pipeline's C is exact
-    M = covariance_from_correlation(C, X.std(axis=0, ddof=1))
+    S = np.cov(X.T)
+    M = (S + S.T) / 2 / np.diag(S).max()
     graph_type = GraphType(sign, loops=False, weighted=True)
     n_edges = (adjacency_matrix(C, threshold, graph_type) > 0).sum()
     A = adjacency_matrix(M, matched_threshold(M, C, threshold, graph_type), graph_type)

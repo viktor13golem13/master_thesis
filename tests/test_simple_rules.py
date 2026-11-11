@@ -15,7 +15,7 @@ def test_average_correlation_leaves_out_the_bond_itself():
 def test_average_covariance_ranks_by_contribution_to_equal_weight_variance():
     # Cov(r_i, Σ_j r_j): bond i's share of the variance of the equal-weight portfolio
     contribution = [np.cov(RETURNS[:, i], RETURNS.sum(axis=1))[0, 1] for i in range(6)]
-    assert np.array_equal(np.argsort(average_covariance(C, SD)), np.argsort(contribution))
+    assert np.array_equal(np.argsort(average_covariance(np.cov(RETURNS.T), SD)), np.argsort(contribution))
 
 
 def test_volatility_rule_is_the_bond_volatility():

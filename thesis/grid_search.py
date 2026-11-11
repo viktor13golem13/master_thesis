@@ -34,7 +34,7 @@ import pandas as pd
 
 from thesis import config, simple_rules
 from thesis.backtest import select_weights, split_by_year, weighted_portfolio_returns
-from thesis.correlation import correlation_for_year, covariance_from_correlation, volatilities_for_year
+from thesis.correlation import correlation_for_year, volatilities_for_year
 from thesis.graph import Graph, GraphType, adjacency_matrix, matched_threshold
 from thesis.metrics import LOWER_IS_BETTER, all_metrics, metric_name
 from thesis.parallel import parallel_map
@@ -68,7 +68,7 @@ def all_graph_configs() -> list[GraphConfig]:
 @dataclass
 class SearchData:
     """What evaluating a graph configuration needs, shared by all workers."""
-    correlations: dict        # (weighting, shrink, year) -> correlation matrix
+    C: dict                   # (matrix, weighting, shrink, year) -> yearly correlation or scaled covariance
     volatilities: dict        # formation year -> daily standard deviation of each bond
     formation_years: list[int]
     returns_by_year: dict     # holding year -> daily bond returns (days x bonds)
@@ -152,7 +152,7 @@ def prepare_search_data(returns, rf_returns, formation_years, processes=None) ->
     """Correlations and volatilities of every formation year, and returns of every holding year."""
     holding_years = [y + 1 for y in formation_years]
     return SearchData(
-        correlations=compute_correlations(returns, formation_years, processes),
+        C=compute_correlations(returns, formation_years, processes),
         volatilities={year: volatilities_for_year(returns, year) for year in formation_years},
         formation_years=formation_years,
         returns_by_year=split_by_year(returns, holding_years),
@@ -161,14 +161,15 @@ def prepare_search_data(returns, rf_returns, formation_years, processes=None) ->
 
 
 def compute_correlations(returns, formation_years, processes=None) -> dict:
-    """Every yearly correlation matrix (each window weighting and shrinkage option), computed in parallel."""
-    tasks = list(itertools.product(config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS, formation_years))
+    """Every yearly correlation and covariance matrix (each window weighting and shrinkage option), in parallel."""
+    tasks = list(itertools.product(config.GRAPH_MATRICES, config.WINDOW_WEIGHTINGS,
+                                   config.SHRINKAGE_OPTIONS, formation_years))
     return dict(parallel_map(_correlation_task, tasks, returns, processes))
 
 
 def _correlation_task(key, returns):
-    weighting, shrink, year = key
-    return key, correlation_for_year(returns, year, weighting, shrink)
+    matrix, weighting, shrink, year = key
+    return key, correlation_for_year(returns, year, weighting, shrink, covariance=matrix == "covariance")
 
 
 # ------------------------------------- step 2: one graph configuration
@@ -221,9 +222,9 @@ def centrality_scores(graph_config: GraphConfig, data: SearchData) -> tuple[dict
 
 def build_graph(graph_config: GraphConfig, data: SearchData, year: int) -> Graph:
     """The graph of one formation year under this graph configuration."""
-    C = data.correlations[(graph_config.weighting, graph_config.shrink, year)]
+    C = data.C[("correlation", graph_config.weighting, graph_config.shrink, year)]
     if graph_config.matrix == "covariance":
-        M = covariance_from_correlation(C, data.volatilities[year])
+        M = data.C[("covariance", graph_config.weighting, graph_config.shrink, year)]
         A = adjacency_matrix(M, matched_threshold(M, C, graph_config.threshold, graph_config.graph_type),
                              graph_config.graph_type)
     else:
@@ -259,7 +260,7 @@ def strategy_rows(settings: dict, scores_by_year: dict, data: SearchData) -> lis
 def evaluate_simple_rules(data: SearchData) -> list[dict]:
     """Results rows for the rules in thesis.simple_rules, ranked like centralities."""
     versions = [(rule, weighting, shrink)
-                for rule in simple_rules.CORRELATION_RULES
+                for rule in simple_rules.MATRIX_RULES
                 for weighting, shrink in itertools.product(config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS)]
     versions.append((simple_rules.volatility, None, None))
 
@@ -267,7 +268,7 @@ def evaluate_simple_rules(data: SearchData) -> list[dict]:
     for rule, weighting, shrink in versions:
         scores_by_year = {}
         for year in data.formation_years:
-            C = data.correlations[(weighting, shrink, year)] if weighting is not None else None
+            C = data.C[(simple_rules.MATRIX_RULES[rule], weighting, shrink, year)] if weighting is not None else None
             scores_by_year[year] = rule(C, data.volatilities[year])
         settings = {"matrix": None, "weighting": weighting, "shrink": shrink, "sign": None, "loops": None,
                     "weighted": None, "threshold": None, "isolated_frac": None,

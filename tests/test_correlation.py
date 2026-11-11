@@ -1,8 +1,10 @@
+import pytest
 import numpy as np
 
 from thesis.correlation import (
-    covariance_from_correlation, single_index_shrinkage, window_weights, yearly_correlation,
+    correlation_for_year, single_index_shrinkage, window_weights, yearly_correlation,
 )
+import pandas as pd
 
 
 def test_single_window_matches_numpy():
@@ -63,10 +65,23 @@ def test_shrinkage_matches_ledoit_wolf_formulas():
     assert np.allclose(np.diag(target), 1)
 
 
-def test_covariance_from_correlation_is_covariance_over_largest_variance():
-    X = np.random.default_rng(4).normal(size=(200, 5)) * np.array([1, 2, 3, 4, 5])
-    sd = X.std(axis=0, ddof=1)
-    scaled = covariance_from_correlation(np.corrcoef(X.T), sd)
-    assert np.allclose(scaled, np.cov(X.T) / sd.max() ** 2)
-    assert np.abs(scaled).max() <= 1 + 1e-12
-    assert np.isclose(scaled[4, 4], 1.0)
+def test_single_window_covariance_matches_numpy():
+    X = np.random.default_rng(4).normal(size=(125, 5))
+    assert np.allclose(yearly_correlation(X, window_length=125, covariance=True), np.cov(X.T))
+
+
+def test_uniform_weighting_averages_every_window_covariance():
+    X = np.random.default_rng(5).normal(size=(260, 5))
+    expected = np.mean([np.cov(X[end - 125:end].T) for end in range(125, 261)], axis=0)
+    assert np.allclose(yearly_correlation(X, window_length=125, covariance=True), expected)
+
+
+@pytest.mark.parametrize("shrink", [False, True])
+def test_scaled_covariance_stays_between_minus_one_and_one(shrink):
+    rng = np.random.default_rng(6)
+    days = pd.bdate_range("2019-01-01", "2019-12-31")
+    X = rng.normal(size=(len(days), 6)) @ rng.normal(size=(6, 6)) * np.array([1, 2, 3, 4, 5, 6]) / 100
+    C = correlation_for_year(pd.DataFrame(X, index=days), 2019, shrink=shrink, covariance=True)
+    assert np.abs(C).max() <= 1 + 1e-12
+    assert np.isclose(np.diag(C).max(), 1.0)
+    assert np.argmax(np.diag(C)) == np.argmax(X.std(axis=0))
