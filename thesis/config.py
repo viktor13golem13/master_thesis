@@ -68,14 +68,18 @@ SHRINKAGE_OPTIONS = (False, True)                    # Ledoit-Wolf shrinkage (pa
 GRAPH_MATRICES = ("correlation", "covariance")
 THRESHOLDS = tuple(k / 10 for k in range(10))        # θ = 0.0, 0.1, ..., 0.9 (paper, Sec. 3.3)
 
-# The paper's 4 transforms x 8 adjacency options give only these 8 distinct
-# graphs, because every threshold is >= 0 (see graph.GraphType).
+# The paper's 4 transforms x 8 adjacency options give only 8 distinct graphs,
+# because every threshold is >= 0 (see graph.GraphType); "damped" adds 4 more.
 GRAPH_TYPES = [
     GraphType(sign, loops, weighted)
-    for sign in ("positive", "absolute")
+    for sign in ("positive", "absolute", "damped")
     for loops in (False, True)
     for weighted in (True, False)
 ]
+
+# "damped" graphs only up to this θ: above it almost no negative correlation
+# passes θ / c, so they equal the "positive" graphs.
+DAMPED_MAX_THRESHOLD = 0.3
 
 # ------------------------------------------------------------ 4. centrality
 KATZ_FRACTIONS = tuple(k / 10 for k in range(1, 10))      # α = f / ρ(A)   (paper, Sec. 3.4)

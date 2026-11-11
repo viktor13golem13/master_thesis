@@ -3,7 +3,9 @@ import pytest
 
 from thesis.config import GRAPH_TYPES
 from thesis.correlation import covariance_from_correlation
-from thesis.graph import GraphType, adjacency_matrix, matched_threshold
+from thesis.graph import NEGATIVE_DAMPING, GraphType, adjacency_matrix, matched_threshold
+from thesis.grid_search import all_graph_configs
+from thesis import config
 
 from tests.helpers import C_TOY
 
@@ -23,15 +25,33 @@ def test_unweighted_graphs_match_paper_figure_2(paper_option, graph_type, expect
 def test_weighted_graphs_keep_the_correlation_on_each_edge(graph_type):
     A = adjacency_matrix(C_TOY, 0.25, graph_type)
     edges = adjacency_matrix(C_TOY, 0.25, GraphType(graph_type.sign, graph_type.loops, False))
-    T = {"positive": C_TOY, "absolute": np.abs(C_TOY)}[graph_type.sign]
+    T = {"positive": C_TOY, "absolute": np.abs(C_TOY),
+         "damped": np.where(C_TOY > 0, C_TOY, -NEGATIVE_DAMPING * C_TOY)}[graph_type.sign]
     assert np.allclose(A, edges * T)
 
 
-def test_there_are_eight_distinct_graph_types():
-    assert len(GRAPH_TYPES) == len(set(GRAPH_TYPES)) == 8
+def test_there_are_twelve_distinct_graph_types():
+    assert len(GRAPH_TYPES) == len(set(GRAPH_TYPES)) == 12
 
 
-@pytest.mark.parametrize("sign", ["positive", "absolute"])
+def test_damped_graphs_lie_between_positive_and_absolute():
+    graph_type = {sign: GraphType(sign, False, False) for sign in ("positive", "absolute", "damped")}
+    for threshold in (0.0, 0.1, 0.25, 0.5):
+        A = {sign: adjacency_matrix(C_TOY, threshold, g) for sign, g in graph_type.items()}
+        assert (A["positive"] <= A["damped"]).all() and (A["damped"] <= A["absolute"]).all()
+        # a negative correlation needs |x| > θ / c
+        expected = (C_TOY > threshold) | (-C_TOY > threshold / NEGATIVE_DAMPING)
+        np.fill_diagonal(expected, False)
+        assert np.array_equal(A["damped"], expected)
+
+
+def test_damped_graphs_only_up_to_the_max_threshold():
+    damped = [g.threshold for g in all_graph_configs() if g.graph_type.sign == "damped"]
+    assert damped and max(damped) <= config.DAMPED_MAX_THRESHOLD
+    assert max(g.threshold for g in all_graph_configs()) == max(config.THRESHOLDS)
+
+
+@pytest.mark.parametrize("sign", ["positive", "absolute", "damped"])
 @pytest.mark.parametrize("threshold", [0.0, 0.3, 0.8])
 def test_matched_threshold_gives_the_same_number_of_edges(sign, threshold):
     rng = np.random.default_rng(7)

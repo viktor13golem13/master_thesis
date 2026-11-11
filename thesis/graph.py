@@ -14,6 +14,11 @@ from functools import cached_property
 
 import numpy as np
 
+# "damped" graphs: a negative correlation x counts as c·|x|, between "positive"
+# (c = 0, negatives ignored) and "absolute" (c = 1). It becomes an edge only if
+# |x| > θ / c, so it must be stronger than a positive correlation to count.
+NEGATIVE_DAMPING = 0.75
+
 
 @dataclass(frozen=True)
 class GraphType:
@@ -23,6 +28,8 @@ class GraphType:
     sign
         "positive"  edges where C_ij > θ          (paper transforms A1, A2)
         "absolute"  edges where |C_ij| > θ        (paper transforms A3, A4)
+        "damped"    edges where max(C_ij, -c·C_ij) > θ, c = NEGATIVE_DAMPING
+                    (not in the paper)
     loops
         Keep each node's edge to itself (paper options 1, 2, 5, 6)
         or remove it (options 3, 4, 7, 8).
@@ -47,7 +54,7 @@ def adjacency_matrix(C: np.ndarray, threshold: float, graph_type: GraphType) -> 
     Weighted:   A = [T > θ] ∘ T      (keep values above θ, zero the rest)
     Unweighted: A = [T > θ]          (1 above θ, 0 otherwise)
 
-    where T is C or |C| according to graph_type.sign, with the diagonal set
+    where T is C, |C| or max(C, -cC) according to graph_type.sign, with the diagonal set
     to 0 unless graph_type.loops.
     """
     T = _signed(C, graph_type)
@@ -75,11 +82,13 @@ def matched_threshold(M: np.ndarray, C: np.ndarray, threshold: float, graph_type
 
 
 def _signed(C: np.ndarray, graph_type: GraphType) -> np.ndarray:
-    """C itself ("positive") or |C| ("absolute"), as a new array."""
+    """C itself ("positive"), |C| ("absolute") or max(C, -cC) ("damped"), as a new array."""
     if graph_type.sign == "positive":
         return C.copy()
     if graph_type.sign == "absolute":
         return np.abs(C)
+    if graph_type.sign == "damped":
+        return np.maximum(C, -NEGATIVE_DAMPING * C)
     raise ValueError(f"Unknown sign {graph_type.sign!r}")
 
 

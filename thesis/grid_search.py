@@ -54,13 +54,14 @@ class GraphConfig:
 
 
 def all_graph_configs() -> list[GraphConfig]:
-    """Every combination of the graph settings in config."""
+    """Every combination of the graph settings in config ("damped" only up to config.DAMPED_MAX_THRESHOLD)."""
     return [
         GraphConfig(matrix, weighting, shrink, graph_type, threshold)
         for matrix, weighting, shrink, graph_type, threshold in itertools.product(
             config.GRAPH_MATRICES, config.WINDOW_WEIGHTINGS, config.SHRINKAGE_OPTIONS,
             config.GRAPH_TYPES, config.THRESHOLDS,
         )
+        if graph_type.sign != "damped" or threshold <= config.DAMPED_MAX_THRESHOLD
     ]
 
 

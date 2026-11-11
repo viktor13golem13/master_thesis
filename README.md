@@ -102,13 +102,13 @@ Constant and duplicate series were *not* removed at this stage; step 1
 | Matrix | correlation (paper), covariance divided by the largest variance |
 | Window weighting | uniform, paper (older windows weigh more, as printed), recent |
 | Shrinkage | no, yes |
-| Graph type | sign (positive / absolute) × loops × weighted = 8 |
+| Graph type | sign (positive / absolute / damped) × loops × weighted = 12; damped only for θ ≤ 0.3 |
 | Threshold θ | 0.0, 0.1, …, 0.9 |
 | Centrality | 59 variants (measure × parameter), plus 20 NBTW exponential variants on unweighted graphs |
 | Selection | central, peripheral |
 | Portfolio size m | 10, 15, 20, 25, 30, 40, 50, 75, 100 |
 
-In total 1,192,320 graph strategies, plus 234 from the simple rules,
+In total 1,430,784 graph strategies, plus 234 from the simple rules,
 evaluated walk-forward: the correlations of year *y* choose the bonds held
 in year *y + 1*, with equal weights.
 
@@ -124,6 +124,11 @@ in year *y + 1*, with equal weights.
   (Tables 6–7) are identical to its |C| results (Tables 2–3), so A3 is
   treated as |C|. Read literally, A3 would connect only negatively
   correlated bonds; on bond data that graph is almost empty above θ = 0.2.
+- **Damped graphs** (not in the paper): between "positive" (negative
+  correlations ignored) and "absolute" (they count fully), a negative
+  correlation x counts as 0.75·|x|, so it becomes an edge only if |x| > θ / 0.75.
+  Only for θ ≤ 0.3: above that almost no bond pair is negative enough, and
+  the graph equals the positive one.
 - **Ties** between equally central bonds (e.g. isolated nodes) for the last
   places of a portfolio are not broken at all: those places are shared
   evenly by all tied bonds (`backtest.select_weights`), the average portfolio
