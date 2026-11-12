@@ -3,8 +3,8 @@ Baseline: the best bonds by direct optimisation (literature study, Sec. 1.6).
 
 Minimise the portfolio's variance over the formation year, optionally
 requiring an average return at least that of the equal-weight portfolio of
-all bonds. The covariance is the Ledoit-Wolf shrunk one (see
-thesis.correlation). Two weighting rules (config.MIQP_WEIGHTINGS):
+all bonds, using the sample covariance of that year. Two weighting rules
+(config.MIQP_WEIGHTINGS):
 
     equal       exactly m bonds at 1/m each: a mixed-integer quadratic
                 programme (best_bonds)
@@ -16,13 +16,12 @@ Both are solved with Gurobi.
 """
 import numpy as np
 import pandas as pd
-import scipy.sparse as sparse
 import gurobipy as gp
 from gurobipy import GRB
 
 from thesis import config
 from thesis.backtest import evaluate_portfolio, evaluate_weighted_portfolio, split_by_year
-from thesis.correlation import single_index_shrinkage
+from thesis.metrics import metric_name
 
 
 def run_miqp_baseline(returns: pd.DataFrame, rf_returns: pd.Series,
@@ -38,6 +37,7 @@ def run_miqp_baseline(returns: pd.DataFrame, rf_returns: pd.Series,
     returns_by_year = split_by_year(returns, holding_years)
     rf_by_year = split_by_year(rf_returns, holding_years)
 
+    rank_column = metric_name(config.RANK_BY)
     rows = []
     for weighting in config.MIQP_WEIGHTINGS:
         for objective in config.MIQP_OBJECTIVES:
@@ -59,7 +59,7 @@ def run_miqp_baseline(returns: pd.DataFrame, rf_returns: pd.Series,
                 rows.append({"weighting": weighting, "objective": objective, "m": m,
                              "bonds_held": bonds_held, "max_gap": max_gap, **metrics})
                 if verbose:
-                    print(f"  {weighting}, {objective}, m={m}: SR={metrics['SR']:.3f}, "
+                    print(f"  {weighting}, {objective}, m={m}: {rank_column}={metrics[rank_column]:.3f}, "
                           f"{bonds_held:.0f} bonds held, max gap {max_gap:.2%}", flush=True)
     return pd.DataFrame(rows)
 
@@ -100,41 +100,28 @@ def _solve(returns: np.ndarray, m: int, objective: str, variable_type, time_limi
     Build and solve the model shared by best_bonds and best_weights; returns
     the model and z, the vector of chosen amounts (weight = z / m).
 
-    The variance uses the shrunk covariance δF + (1 - δ)S. For z this needs
-    no 745 x 745 matrix:
+    The variance zᵀSz, with S the sample covariance, needs no 745 x 745 matrix:
         zᵀSz = average over days of (x_t · z)²        x = centred daily returns
-        zᵀFz = (cᵀz)² / v + Σ_i d_i z_i²              the single-index model
-    with c the bonds' covariances with the market, v the market's variance and
-    d_i the part of bond i's variance the market does not explain.
     """
     # Work in percent: variances of daily returns (~1e-6) are below the solver's
     # default precision. Rescaling does not change which portfolio is best.
     returns = 100 * returns
     n_days, n_bonds = returns.shape
     x = returns - returns.mean(axis=0)
-    market = x.mean(axis=1)
-    cov_market = x.T @ market / n_days
-    var_market = market @ market / n_days
-    own = (x ** 2).mean(axis=0) - cov_market ** 2 / var_market
-    shrinkage, _ = single_index_shrinkage(returns)
 
     model = gp.Model()
     model.Params.OutputFlag = 0
     model.Params.TimeLimit = time_limit
     chosen = model.addMVar(n_bonds, lb=0.0, ub=1.0, vtype=variable_type)
     daily = model.addMVar(n_days, lb=-GRB.INFINITY)          # x_t · z for each day
-    with_market = model.addVar(lb=-GRB.INFINITY)            # cᵀz
     model.addConstr(chosen.sum() == m)
     model.addConstr(daily == x @ chosen)
-    model.addConstr(with_market == cov_market @ chosen)
     if objective == "min_variance_target_return":
         model.addConstr(returns.mean(axis=0) @ chosen >= m * returns.mean())
     elif objective != "min_variance":
         raise ValueError(f"Unknown objective {objective!r}; expected one of {config.MIQP_OBJECTIVES}")
 
-    sample = (daily @ daily) / n_days
-    single_index = with_market * with_market / var_market + chosen @ sparse.diags(own) @ chosen
-    model.setObjective((1 - shrinkage) * sample + shrinkage * single_index, GRB.MINIMIZE)
+    model.setObjective((daily @ daily) / n_days, GRB.MINIMIZE)
     model.optimize()
     if model.SolCount == 0:
         raise RuntimeError(f"No portfolio found within {time_limit} s (m={m}, {objective})")
