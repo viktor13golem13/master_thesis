@@ -17,15 +17,15 @@ def test_expected_return():
 
 
 def test_volatility():
-    assert np.isclose(metrics.volatility(RP, RF), np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
+    assert np.isclose(metrics.volatility_daily(RP, RF), np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
 
 
 def test_sharpe_ratio():
-    assert np.isclose(metrics.sharpe_ratio(RP, RF), (0.006 - 0.001) / np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
+    assert np.isclose(metrics.sharpe_ratio_daily(RP, RF), (0.006 - 0.001) / np.std(RP, ddof=1) * np.sqrt(metrics.TRADING_DAYS_PER_YEAR))
 
 
 def test_sharpe_ratio_of_constant_returns_is_undefined():
-    assert np.isnan(metrics.sharpe_ratio(np.full(5, 0.01), RF))
+    assert np.isnan(metrics.sharpe_ratio_daily(np.full(5, 0.01), RF))
 
 
 def test_lo_volatility_matches_lo_formula():
@@ -33,9 +33,9 @@ def test_lo_volatility_matches_lo_formula():
     x = r - r.mean()
     rho = [np.sum(x[k:] * x[:len(x) - k]) / np.sum(x * x) for k in range(21)]
     factor = 1 + 2 * sum((1 - k / 261) * rho[k] for k in range(1, 21))
-    assert np.isclose(metrics.volatility_lo(r, r), metrics.volatility(r, r) * np.sqrt(factor))
+    assert np.isclose(metrics.volatility_lo(r, r), metrics.volatility_daily(r, r) * np.sqrt(factor))
     rf = np.full(len(r), 0.0001)
-    assert np.isclose(metrics.sharpe_ratio_lo(r, rf), metrics.sharpe_ratio(r, rf) / np.sqrt(factor))
+    assert np.isclose(metrics.sharpe_ratio_lo(r, rf), metrics.sharpe_ratio_daily(r, rf) / np.sqrt(factor))
 
 
 def test_block_volatilities_compound_each_block():
@@ -48,7 +48,7 @@ def test_block_volatilities_compound_each_block():
 
 def test_volatility_versions_agree_on_independent_returns():
     r = np.random.default_rng(2).normal(size=50 * 261) / 100
-    daily = metrics.volatility(r, r)
+    daily = metrics.volatility_daily(r, r)
     for version in (metrics.volatility_lo, metrics.volatility_monthly, metrics.volatility_yearly):
         assert abs(version(r, r) / daily - 1) < 0.25
 
@@ -56,7 +56,7 @@ def test_volatility_versions_agree_on_independent_returns():
 def test_volatility_versions_grow_with_positive_autocorrelation():
     noise = np.random.default_rng(3).normal(size=30 * 261 + 1) / 100
     r = noise[1:] + 0.5 * noise[:-1]                                   # lag-1 autocorrelation 0.4
-    daily = metrics.volatility(r, r)
+    daily = metrics.volatility_daily(r, r)
     assert metrics.volatility_lo(r, r) > 1.2 * daily
     assert metrics.volatility_monthly(r, r) > 1.2 * daily
 

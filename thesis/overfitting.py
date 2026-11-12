@@ -91,11 +91,13 @@ def sharpe_lo_columns(returns: np.ndarray, risk_free: np.ndarray) -> np.ndarray:
     """
     x = returns - returns.mean(axis=0)
     q = TRADING_DAYS_PER_YEAR
-    total = np.einsum("ij,ij->j", x, x)
-    for lag in range(1, LO_LAGS + 1):
-        total += 2 * (1 - lag / q) * np.einsum("ij,ij->j", x[lag:], x[:-lag])
+    s0 = np.einsum("ij,ij->j", x, x)
     with np.errstate(invalid="ignore", divide="ignore"):
-        sd = np.sqrt(total / (len(x) - 1) * q)
+        correction = np.ones(returns.shape[1])
+        for k in range(1, LO_LAGS + 1):
+            rho_k = np.einsum("ij,ij->j", x[k:], x[:-k]) / s0
+            correction += 2 * (1 - k / q) * rho_k
+        sd = returns.std(axis=0, ddof=1) * np.sqrt(q) * np.sqrt(correction)
         excess = (returns.mean(axis=0) - risk_free.mean()) * q
         return np.where(sd > 0, excess / sd, np.nan)
 

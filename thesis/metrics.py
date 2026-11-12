@@ -40,7 +40,7 @@ def expected_return(portfolio_returns, risk_free_returns) -> float:
     return float(np.mean(portfolio_returns) * TRADING_DAYS_PER_YEAR)
 
 
-def volatility(portfolio_returns, risk_free_returns) -> float:
+def volatility_daily(portfolio_returns, risk_free_returns) -> float:
     """Standard deviation of daily returns, annualised (SD)."""
     return float(np.std(portfolio_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR))
 
@@ -52,16 +52,20 @@ def volatility_lo(portfolio_returns, risk_free_returns) -> float:
 
         SD_Lo = SD · √(1 + 2 Σ_{k=1}^{LO_LAGS} (1 - k/q) ρ_k)
 
+    with ρ_k = S_k / S_0, S_k = Σ_t x_t x_{t-k} and x_t the return minus its mean.
     NaN if the estimated autocorrelations make the expression negative.
     """
     x = portfolio_returns - np.mean(portfolio_returns)
+    if not x @ x > 0:                       # constant returns: no volatility, no autocorrelation
+        return 0.0
     q = TRADING_DAYS_PER_YEAR
-    total = x @ x
-    for lag in range(1, LO_LAGS + 1):
-        total += 2 * (1 - lag / q) * (x[lag:] @ x[:-lag])
-    if total < 0:
+    correction = 1.0
+    for k in range(1, LO_LAGS + 1):
+        rho_k = (x[k:] @ x[:-k]) / (x @ x)
+        correction += 2 * (1 - k / q) * rho_k
+    if correction < 0:
         return float("nan")
-    return float(np.sqrt(total / (len(x) - 1) * q))
+    return volatility_daily(portfolio_returns, risk_free_returns) * float(np.sqrt(correction))
 
 
 def volatility_monthly(portfolio_returns, risk_free_returns) -> float:
@@ -87,12 +91,12 @@ def _block_volatility(portfolio_returns, days: int) -> float:
     return float(np.std(block_returns, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR / days))
 
 
-def sharpe_ratio(portfolio_returns, risk_free_returns) -> float:
+def sharpe_ratio_daily(portfolio_returns, risk_free_returns) -> float:
     """
     Excess return per unit of risk, annualised (SR):
     (E[r_p] - E[r_f]) / sd(r_p).
     """
-    return _sharpe(portfolio_returns, risk_free_returns, volatility(portfolio_returns, risk_free_returns))
+    return _sharpe(portfolio_returns, risk_free_returns, volatility_daily(portfolio_returns, risk_free_returns))
 
 
 def sharpe_ratio_lo(portfolio_returns, risk_free_returns) -> float:
@@ -176,8 +180,8 @@ def upside_potential_ratio(portfolio_returns, risk_free_returns) -> float:
 METRICS = {
     "CR": cumulative_return,
     "ER": expected_return,
-    "SD": volatility,
-    "SR": sharpe_ratio,
+    "SD": volatility_daily,
+    "SR": sharpe_ratio_daily,
     "SD_Lo": volatility_lo,
     "SR_Lo": sharpe_ratio_lo,
     "SD_M": volatility_monthly,
