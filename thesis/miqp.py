@@ -25,6 +25,45 @@ from thesis.backtest import evaluate_portfolio, evaluate_weighted_portfolio, spl
 from thesis.correlation import single_index_shrinkage
 
 
+def run_miqp_baseline(returns: pd.DataFrame, rf_returns: pd.Series,
+                      formation_years: list[int], verbose: bool = True) -> pd.DataFrame:
+    """
+    One row per (weighting, objective, portfolio size m): the portfolio chosen
+    with data of formation year y is held during year y + 1 and scored like
+    the graph strategies. bonds_held is the average number of bonds with a
+    non-zero weight; max_gap the largest optimality gap over the years.
+    """
+    holding_years = [year + 1 for year in formation_years]
+    formation_returns = split_by_year(returns, formation_years)
+    returns_by_year = split_by_year(returns, holding_years)
+    rf_by_year = split_by_year(rf_returns, holding_years)
+
+    rows = []
+    for weighting in config.MIQP_WEIGHTINGS:
+        for objective in config.MIQP_OBJECTIVES:
+            for m in config.PORTFOLIO_SIZES:
+                if weighting == "equal":
+                    holdings, gaps = {}, []
+                    for year in formation_years:
+                        bonds, gap = best_bonds(formation_returns[year], m, objective)
+                        holdings[year + 1] = bonds
+                        gaps.append(gap)
+                    metrics = evaluate_portfolio(returns_by_year, rf_by_year, holdings)
+                    bonds_held, max_gap = float(m), max(gaps)
+                else:
+                    weights = {year + 1: best_weights(formation_returns[year], m, objective)
+                               for year in formation_years}
+                    metrics = evaluate_weighted_portfolio(returns_by_year, rf_by_year, weights)
+                    bonds_held = float(np.mean([np.count_nonzero(w) for w in weights.values()]))
+                    max_gap = 0.0                # a convex problem: always solved exactly
+                rows.append({"weighting": weighting, "objective": objective, "m": m,
+                             "bonds_held": bonds_held, "max_gap": max_gap, **metrics})
+                if verbose:
+                    print(f"  {weighting}, {objective}, m={m}: SR={metrics['SR']:.3f}, "
+                          f"{bonds_held:.0f} bonds held, max gap {max_gap:.2%}", flush=True)
+    return pd.DataFrame(rows)
+
+
 def best_bonds(returns: np.ndarray, m: int, objective: str,
                time_limit: float = config.MIQP_TIME_LIMIT) -> tuple[np.ndarray, float]:
     """
@@ -100,42 +139,3 @@ def _solve(returns: np.ndarray, m: int, objective: str, variable_type, time_limi
     if model.SolCount == 0:
         raise RuntimeError(f"No portfolio found within {time_limit} s (m={m}, {objective})")
     return model, chosen
-
-
-def run_miqp_baseline(returns: pd.DataFrame, rf_returns: pd.Series,
-                      formation_years: list[int], verbose: bool = True) -> pd.DataFrame:
-    """
-    One row per (weighting, objective, portfolio size m): the portfolio chosen
-    with data of formation year y is held during year y + 1 and scored like
-    the graph strategies. bonds_held is the average number of bonds with a
-    non-zero weight; max_gap the largest optimality gap over the years.
-    """
-    holding_years = [year + 1 for year in formation_years]
-    formation_returns = split_by_year(returns, formation_years)
-    returns_by_year = split_by_year(returns, holding_years)
-    rf_by_year = split_by_year(rf_returns, holding_years)
-
-    rows = []
-    for weighting in config.MIQP_WEIGHTINGS:
-        for objective in config.MIQP_OBJECTIVES:
-            for m in config.PORTFOLIO_SIZES:
-                if weighting == "equal":
-                    holdings, gaps = {}, []
-                    for year in formation_years:
-                        bonds, gap = best_bonds(formation_returns[year], m, objective)
-                        holdings[year + 1] = bonds
-                        gaps.append(gap)
-                    metrics = evaluate_portfolio(returns_by_year, rf_by_year, holdings)
-                    bonds_held, max_gap = float(m), max(gaps)
-                else:
-                    weights = {year + 1: best_weights(formation_returns[year], m, objective)
-                               for year in formation_years}
-                    metrics = evaluate_weighted_portfolio(returns_by_year, rf_by_year, weights)
-                    bonds_held = float(np.mean([np.count_nonzero(w) for w in weights.values()]))
-                    max_gap = 0.0                # a convex problem: always solved exactly
-                rows.append({"weighting": weighting, "objective": objective, "m": m,
-                             "bonds_held": bonds_held, "max_gap": max_gap, **metrics})
-                if verbose:
-                    print(f"  {weighting}, {objective}, m={m}: SR={metrics['SR']:.3f}, "
-                          f"{bonds_held:.0f} bonds held, max gap {max_gap:.2%}", flush=True)
-    return pd.DataFrame(rows)

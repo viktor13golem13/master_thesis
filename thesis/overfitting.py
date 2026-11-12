@@ -31,6 +31,31 @@ EULER_GAMMA = 0.5772156649015329
 
 # ------------------------------------------------------ 1. Deflated Sharpe Ratio
 
+def deflated_sharpe_ratio(best_excess_returns: np.ndarray, best_sharpe: float,
+                          trial_sharpes: np.ndarray, n_trials: int) -> dict:
+    """
+    DSR of the best strategy among n_trials.
+
+    Parameters
+    ----------
+    best_excess_returns
+        Daily returns minus the risk-free rate of the best strategy.
+    best_sharpe
+        Its annual Sharpe ratio (SR_Lo).
+    trial_sharpes
+        Annual Sharpe ratios of the strategies tried; only their variance is used.
+    n_trials
+        Number of independent trials N.
+    """
+    per_day = np.sqrt(TRADING_DAYS_PER_YEAR)
+    variance = np.var(trial_sharpes / per_day, ddof=1)
+    threshold = expected_maximum_sharpe(n_trials, variance)
+    dsr = probabilistic_sharpe_ratio(best_sharpe / per_day, threshold, len(best_excess_returns),
+                                     skew(best_excess_returns), kurtosis(best_excess_returns, fisher=False))
+    return {"N": n_trials, "best SR_Lo": best_sharpe,
+            "expected best SR_Lo without skill": threshold * per_day, "DSR": dsr}
+
+
 def expected_maximum_sharpe(n_trials: int, sharpe_variance: float) -> float:
     """
     Expected best Sharpe ratio of n_trials strategies whose true Sharpe ratio
@@ -57,50 +82,7 @@ def probabilistic_sharpe_ratio(sharpe: float, benchmark: float, n_obs: int,
     return float(norm.cdf((sharpe - benchmark) * np.sqrt(n_obs - 1) / spread))
 
 
-def deflated_sharpe_ratio(best_excess_returns: np.ndarray, best_sharpe: float,
-                          trial_sharpes: np.ndarray, n_trials: int) -> dict:
-    """
-    DSR of the best strategy among n_trials.
-
-    Parameters
-    ----------
-    best_excess_returns
-        Daily returns minus the risk-free rate of the best strategy.
-    best_sharpe
-        Its annual Sharpe ratio (SR_Lo).
-    trial_sharpes
-        Annual Sharpe ratios of the strategies tried; only their variance is used.
-    n_trials
-        Number of independent trials N.
-    """
-    per_day = np.sqrt(TRADING_DAYS_PER_YEAR)
-    variance = np.var(trial_sharpes / per_day, ddof=1)
-    threshold = expected_maximum_sharpe(n_trials, variance)
-    dsr = probabilistic_sharpe_ratio(best_sharpe / per_day, threshold, len(best_excess_returns),
-                                     skew(best_excess_returns), kurtosis(best_excess_returns, fisher=False))
-    return {"N": n_trials, "best SR_Lo": best_sharpe,
-            "expected best SR_Lo without skill": threshold * per_day, "DSR": dsr}
-
-
 # ------------------------------------------ 2. Probability of Backtest Overfitting
-
-def sharpe_lo_columns(returns: np.ndarray, risk_free: np.ndarray) -> np.ndarray:
-    """
-    metrics.sharpe_ratio_lo of every column of returns (days x strategies) at
-    once; NaN where Lo's volatility is undefined.
-    """
-    x = returns - returns.mean(axis=0)
-    q = TRADING_DAYS_PER_YEAR
-    s0 = np.einsum("ij,ij->j", x, x)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        correction = np.ones(returns.shape[1])
-        for k in range(1, LO_LAGS + 1):
-            rho_k = np.einsum("ij,ij->j", x[k:], x[:-k]) / s0
-            correction += 2 * (1 - k / q) * rho_k
-        sd = returns.std(axis=0, ddof=1) * np.sqrt(q) * np.sqrt(correction)
-        excess = (returns.mean(axis=0) - risk_free.mean()) * q
-        return np.where(sd > 0, excess / sd, np.nan)
-
 
 def backtest_overfitting(returns: np.ndarray, risk_free: np.ndarray, n_blocks: int = 10) -> dict:
     """
@@ -141,6 +123,24 @@ def backtest_overfitting(returns: np.ndarray, risk_free: np.ndarray, n_blocks: i
     omega = np.array(omega)
     return {"PBO": float(np.mean(omega <= 0.5)), "in_sample": np.array(in_sample),
             "out_of_sample": np.array(out_of_sample), "omega": omega}
+
+
+def sharpe_lo_columns(returns: np.ndarray, risk_free: np.ndarray) -> np.ndarray:
+    """
+    metrics.sharpe_ratio_lo of every column of returns (days x strategies) at
+    once; NaN where Lo's volatility is undefined.
+    """
+    x = returns - returns.mean(axis=0)
+    q = TRADING_DAYS_PER_YEAR
+    s0 = np.einsum("ij,ij->j", x, x)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        correction = np.ones(returns.shape[1])
+        for k in range(1, LO_LAGS + 1):
+            rho_k = np.einsum("ij,ij->j", x[k:], x[:-k]) / s0
+            correction += 2 * (1 - k / q) * rho_k
+        sd = returns.std(axis=0, ddof=1) * np.sqrt(q) * np.sqrt(correction)
+        excess = (returns.mean(axis=0) - risk_free.mean()) * q
+        return np.where(sd > 0, excess / sd, np.nan)
 
 
 # ------------------------------------------------------- 3. random portfolios
