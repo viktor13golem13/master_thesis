@@ -66,7 +66,7 @@ def test_expected_best_of_one_draw_is_the_mean_and_of_many_the_maximum():
 def test_series_store_keeps_each_distinct_series_once():
     a, b = np.arange(4.0), np.ones(4)
     store = SeriesStore()
-    rows = store.add_rows([{"daily": a}, {"daily": b}, {"daily": a.copy()}])
-    assert [row["series"] for row in rows] == [0, 1, 0]
-    assert "daily" not in rows[0]
+    strategies = store.number_strategies([{"daily": a}, {"daily": b}, {"daily": a.copy()}])
+    assert [strategy["series"] for strategy in strategies] == [0, 1, 0]
+    assert "daily" not in strategies[0]
     assert np.array_equal(store.matrix(), np.column_stack([a, b]).astype(np.float32))

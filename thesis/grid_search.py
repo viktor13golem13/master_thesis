@@ -117,10 +117,10 @@ def run_grid_search(
     rows = []
     series = SeriesStore()
     for done, result in enumerate(parallel_map(evaluate_graph_config, graph_configs, data, processes), 1):
-        rows.extend(series.add_rows(result))
+        rows.extend(series.number_strategies(result))
         if verbose and (done % 25 == 0 or done == len(graph_configs)):
             print(f"  {done}/{len(graph_configs)} done ({len(rows)} strategies)", flush=True)
-    rows.extend(series.add_rows(evaluate_simple_rules(data)))
+    rows.extend(series.number_strategies(evaluate_simple_rules(data)))
 
     rank_column = metric_name(config.RANK_BY)
     best_first_ascending = rank_column in LOWER_IS_BETTER
@@ -132,18 +132,23 @@ class SeriesStore:
     """Keeps each distinct daily return series once and numbers them 0, 1, 2, ..."""
 
     def __init__(self):
-        self.index = {}             # bytes of a float32 series -> its number
+        self.number_of = {}         # daily returns as float32 bytes -> number of that series
 
-    def add_rows(self, rows: list[dict]) -> list[dict]:
-        """Replace each row's "daily" returns by the number of that series."""
-        for row in rows:
-            key = row.pop("daily").astype(np.float32).tobytes()
-            row["series"] = self.index.setdefault(key, len(self.index))
-        return rows
+    def number_strategies(self, strategies: list[dict]) -> list[dict]:
+        """
+        Move each strategy's daily returns ("daily") into the store, and give
+        the strategy the number of its series instead ("series"). The returns
+        are removed from the strategy so that they are kept only once.
+        """
+        for strategy in strategies:
+            returns_as_bytes = strategy.pop("daily").astype(np.float32).tobytes()
+            strategy["series"] = self.number_of.setdefault(returns_as_bytes, len(self.number_of))
+        return strategies
 
     def matrix(self) -> np.ndarray:
         """All series as columns, in order of their number (dicts keep insertion order)."""
-        return np.frombuffer(b"".join(self.index), dtype=np.float32).reshape(len(self.index), -1).T
+        all_bytes = b"".join(self.number_of)
+        return np.frombuffer(all_bytes, dtype=np.float32).reshape(len(self.number_of), -1).T
 
 
 # ------------------------------------------ step 1: correlation matrices
